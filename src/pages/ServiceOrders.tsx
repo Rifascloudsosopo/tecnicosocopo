@@ -255,7 +255,12 @@ export default function ServiceOrders() {
           <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
             <span>{new Date(order.created_at).toLocaleDateString('es-ES')}</span>
             <div className="flex items-center gap-1">
-              <span>${order.initial_budget}</span>
+              {(() => {
+                const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                const orderTotal = order.initial_budget + partsTotal + costsTotal;
+                return <span>${orderTotal.toFixed(2)}</span>;
+              })()}
               {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </div>
           </div>
@@ -275,7 +280,12 @@ export default function ServiceOrders() {
             
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Pagado:</span>
-              <span className="text-sm font-medium">${order.total_paid} / ${order.initial_budget}</span>
+              {(() => {
+                const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                const orderTotal = order.initial_budget + partsTotal + costsTotal;
+                return <span className="text-sm font-medium">${order.total_paid} / ${orderTotal.toFixed(2)}</span>;
+              })()}
             </div>
 
             <Select
@@ -415,7 +425,7 @@ export default function ServiceOrders() {
                         <th className="px-5 py-3 text-left">Falla</th>
                         <th className="px-5 py-3 text-left">Técnico</th>
                         <th className="px-5 py-3 text-left">Estado</th>
-                        <th className="px-5 py-3 text-left">Presupuesto</th>
+                        <th className="px-5 py-3 text-left">Total</th>
                         <th className="px-5 py-3 text-center">Acciones</th>
                       </tr>
                     </thead>
@@ -464,10 +474,19 @@ export default function ServiceOrders() {
                             </Select>
                           </td>
                           <td className="px-5 py-4">
-                            <p className="font-semibold text-foreground">${order.initial_budget}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Pagado: ${order.total_paid}
-                            </p>
+                            {(() => {
+                              const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                              const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                              const orderTotal = order.initial_budget + partsTotal + costsTotal;
+                              return (
+                                <>
+                                  <p className="font-semibold text-foreground">${orderTotal.toFixed(2)}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Pagado: ${order.total_paid}
+                                  </p>
+                                </>
+                              );
+                            })()}
                           </td>
                           <td className="px-5 py-4">
                             <div className="flex items-center justify-center gap-1">
@@ -628,34 +647,49 @@ export default function ServiceOrders() {
               {/* Financials */}
               <div className="p-4 bg-muted/50 rounded-lg">
                 <h4 className="font-medium mb-2">Información Financiera</h4>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Presupuesto:</span>
-                  <span className="font-medium">${selectedOrder.initial_budget}</span>
-                </div>
                 {(() => {
                   const partsTotal = selectedOrder.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                   const costsTotal = selectedOrder.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
-                  const grandTotal = partsTotal + costsTotal;
-                  if (grandTotal > 0) {
-                    return (
-                      <div className="flex justify-between text-sm mt-1">
-                        <span className="text-muted-foreground">Repuestos + Extras:</span>
-                        <span className="font-medium">${grandTotal.toFixed(2)}</span>
+                  const orderTotal = selectedOrder.initial_budget + partsTotal + costsTotal;
+                  const pending = orderTotal - selectedOrder.total_paid;
+                  
+                  return (
+                    <>
+                      {selectedOrder.initial_budget > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Monto base:</span>
+                          <span className="font-medium">${selectedOrder.initial_budget.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {partsTotal > 0 && (
+                        <div className="flex justify-between text-sm mt-1">
+                          <span className="text-muted-foreground">Repuestos:</span>
+                          <span className="font-medium">${partsTotal.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {costsTotal > 0 && (
+                        <div className="flex justify-between text-sm mt-1">
+                          <span className="text-muted-foreground">Extras (mano de obra):</span>
+                          <span className="font-medium">${costsTotal.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm mt-1 pt-1 border-t">
+                        <span className="text-muted-foreground font-semibold">Total:</span>
+                        <span className="font-bold">${orderTotal.toFixed(2)}</span>
                       </div>
-                    );
-                  }
-                  return null;
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-muted-foreground">Pagado:</span>
+                        <span className="font-medium text-success">${selectedOrder.total_paid.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-muted-foreground">Pendiente:</span>
+                        <span className={`font-medium ${pending > 0 ? 'text-warning' : 'text-success'}`}>
+                          ${pending.toFixed(2)}
+                        </span>
+                      </div>
+                    </>
+                  );
                 })()}
-                <div className="flex justify-between text-sm mt-1">
-                  <span className="text-muted-foreground">Pagado:</span>
-                  <span className="font-medium text-success">${selectedOrder.total_paid}</span>
-                </div>
-                <div className="flex justify-between text-sm mt-1">
-                  <span className="text-muted-foreground">Pendiente:</span>
-                  <span className="font-medium text-warning">
-                    ${selectedOrder.initial_budget - selectedOrder.total_paid}
-                  </span>
-                </div>
               </div>
 
               {/* Warranty Info */}
