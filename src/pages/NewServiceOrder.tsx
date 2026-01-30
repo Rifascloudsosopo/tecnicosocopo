@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 interface Customer {
@@ -77,8 +77,8 @@ export default function NewServiceOrder() {
   }, []);
 
   async function loadTechnicians() {
-    const { data } = await supabase
-      .from('technicians')
+    const { data } = await (supabase
+      .from('technicians') as any)
       .select('id, name, specialty')
       .eq('is_active', true);
     setTechnicians(data || []);
@@ -92,8 +92,8 @@ export default function NewServiceOrder() {
     setSelectedCustomer(null);
 
     try {
-      const { data, error } = await supabase
-        .from('customers')
+      const { data, error } = await (supabase
+        .from('customers') as any)
         .select('id, cedula, name, phone')
         .eq('cedula', cedulaSearch.trim())
         .maybeSingle();
@@ -141,8 +141,8 @@ export default function NewServiceOrder() {
 
       // Create customer if new
       if (!customerId && customerNotFound) {
-        const { data: newCust, error: custError } = await supabase
-          .from('customers')
+        const { data: newCust, error: custError } = await (supabase
+          .from('customers') as any)
           .insert({
             cedula: cedulaSearch.trim(),
             name: newCustomer.name.trim(),
@@ -159,8 +159,8 @@ export default function NewServiceOrder() {
       const initialBudget = parseFloat(budget.initial) || 0;
       const advancePayment = parseFloat(budget.advance) || 0;
 
-      const { data: order, error: orderError } = await supabase
-        .from('service_orders')
+      const { data: order, error: orderError } = await (supabase
+        .from('service_orders') as any)
         .insert({
           customer_id: customerId,
           technician_id: selectedTechnician || null,
@@ -185,7 +185,7 @@ export default function NewServiceOrder() {
 
       // Create initial payment if advance > 0
       if (advancePayment > 0) {
-        await supabase.from('order_payments').insert({
+        await (supabase.from('order_payments') as any).insert({
           order_id: order.id,
           amount: advancePayment,
           payment_method: 'efectivo',

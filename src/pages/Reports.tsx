@@ -121,8 +121,8 @@ export default function Reports() {
       const { startDate, endDate } = getDateRange();
 
       // Fetch orders in date range
-      const { data: orders } = await supabase
-        .from('service_orders')
+      const { data: orders } = await (supabase
+        .from('service_orders') as any)
         .select(`
           id, status, initial_budget, total_paid, created_at, delivered_at,
           device_brand, reported_issue, technician_id,
@@ -132,26 +132,26 @@ export default function Reports() {
         .lte('created_at', endDate);
 
       // Fetch spare parts usage for costs
-      const { data: partsUsage } = await supabase
-        .from('spare_parts_usage')
+      const { data: partsUsage } = await (supabase
+        .from('spare_parts_usage') as any)
         .select('unit_price, quantity, order_id')
-        .in('order_id', orders?.map(o => o.id) || []);
+        .in('order_id', orders?.map((o: any) => o.id) || []);
 
       // Calculate stats
-      const completedOrders = orders?.filter(o => 
+      const completedOrders = orders?.filter((o: any) => 
         o.status === 'completed' || o.status === 'delivered'
       ) || [];
       
-      const totalRevenue = orders?.reduce((sum, o) => sum + (Number(o.total_paid) || 0), 0) || 0;
-      const totalCosts = partsUsage?.reduce((sum, p) => 
+      const totalRevenue = orders?.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0) || 0;
+      const totalCosts = partsUsage?.reduce((sum: number, p: any) => 
         sum + (Number(p.unit_price) * (p.quantity || 1)), 0
       ) || 0;
 
       // Calculate average repair time (in days)
       let avgTime = 0;
-      const ordersWithDelivery = completedOrders.filter(o => o.delivered_at);
+      const ordersWithDelivery = completedOrders.filter((o: any) => o.delivered_at);
       if (ordersWithDelivery.length > 0) {
-        const totalDays = ordersWithDelivery.reduce((sum, o) => {
+        const totalDays = ordersWithDelivery.reduce((sum: number, o: any) => {
           const created = new Date(o.created_at);
           const delivered = new Date(o.delivered_at!);
           return sum + (delivered.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
@@ -160,8 +160,8 @@ export default function Reports() {
       }
 
       // Get unique customers
-      const { count: customersCount } = await supabase
-        .from('customers')
+      const { count: customersCount } = await (supabase
+        .from('customers') as any)
         .select('id', { count: 'exact', head: true });
 
       setStats({
@@ -176,7 +176,7 @@ export default function Reports() {
 
       // Calculate brand distribution
       const brandCounts: Record<string, number> = {};
-      orders?.forEach(o => {
+      orders?.forEach((o: any) => {
         const brand = o.device_brand || 'Otro';
         brandCounts[brand] = (brandCounts[brand] || 0) + 1;
       });
@@ -203,7 +203,7 @@ export default function Reports() {
 
       // Calculate issue distribution
       const issueCounts: Record<string, number> = {};
-      orders?.forEach(o => {
+      orders?.forEach((o: any) => {
         const issue = o.reported_issue?.toLowerCase() || '';
         if (issue.includes('pantalla')) issueCounts['Pantalla rota'] = (issueCounts['Pantalla rota'] || 0) + 1;
         else if (issue.includes('batería') || issue.includes('bateria')) issueCounts['Batería'] = (issueCounts['Batería'] || 0) + 1;
@@ -255,18 +255,18 @@ export default function Reports() {
         const date = subDays(new Date(), 6 - i);
         const dateStr = format(date, 'yyyy-MM-dd');
         
-        const dayOrders = orders?.filter(o => 
+        const dayOrders = orders?.filter((o: any) => 
           o.created_at?.startsWith(dateStr)
         ) || [];
         
-        const dayParts = partsUsage?.filter(p => 
-          dayOrders.some(o => o.id === p.order_id)
+        const dayParts = partsUsage?.filter((p: any) => 
+          dayOrders.some((o: any) => o.id === p.order_id)
         ) || [];
 
         return {
           name: dayName.charAt(0).toUpperCase() + dayName.slice(1),
-          ingresos: dayOrders.reduce((sum, o) => sum + (Number(o.total_paid) || 0), 0),
-          gastos: dayParts.reduce((sum, p) => sum + (Number(p.unit_price) * (p.quantity || 1)), 0),
+          ingresos: dayOrders.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0),
+          gastos: dayParts.reduce((sum: number, p: any) => sum + (Number(p.unit_price) * (p.quantity || 1)), 0),
         };
       });
 

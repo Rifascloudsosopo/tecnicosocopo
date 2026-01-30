@@ -59,30 +59,30 @@ export default function Dashboard() {
     setLoading(true);
     try {
       // Get orders stats
-      const { data: orders } = await supabase
-        .from('service_orders')
+      const { data: orders } = await (supabase
+        .from('service_orders') as any)
         .select('id, status, initial_budget, total_paid');
 
-      const pendingOrders = orders?.filter(o => o.status === 'pending').length || 0;
-      const inProgressOrders = orders?.filter(o => o.status === 'in_progress').length || 0;
-      const completedOrders = orders?.filter(o => o.status === 'completed' || o.status === 'delivered').length || 0;
-      const totalRevenue = orders?.reduce((sum, o) => sum + (Number(o.total_paid) || 0), 0) || 0;
+      const pendingOrders = orders?.filter((o: any) => o.status === 'pending').length || 0;
+      const inProgressOrders = orders?.filter((o: any) => o.status === 'in_progress').length || 0;
+      const completedOrders = orders?.filter((o: any) => o.status === 'completed' || o.status === 'delivered').length || 0;
+      const totalRevenue = orders?.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0) || 0;
 
       // Get customers count
-      const { count: customersCount } = await supabase
-        .from('customers')
+      const { count: customersCount } = await (supabase
+        .from('customers') as any)
         .select('id', { count: 'exact', head: true });
 
       // Get low stock items
-      const { data: lowStock } = await supabase
-        .from('spare_parts')
+      const { data: lowStock } = await (supabase
+        .from('spare_parts') as any)
         .select('id, stock, min_stock');
       
-      const lowStockCount = lowStock?.filter(p => (p.stock || 0) <= (p.min_stock || 5)).length || 0;
+      const lowStockCount = lowStock?.filter((p: any) => (p.stock || 0) <= (p.min_stock || 5)).length || 0;
 
       // Get recent orders
-      const { data: recent } = await supabase
-        .from('service_orders')
+      const { data: recent } = await (supabase
+        .from('service_orders') as any)
         .select(`
           id, order_number, device_brand, device_model, status, created_at,
           customers (name)

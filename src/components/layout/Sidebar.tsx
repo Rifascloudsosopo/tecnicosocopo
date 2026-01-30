@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -12,10 +12,13 @@ import {
   ChevronRight,
   MessageSquare,
   X,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/hooks/useAuth';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -35,13 +38,24 @@ interface SidebarProps {
 export function Sidebar({ onClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { signOut, user } = useAuth();
+  const { settings } = useCompanySettings();
 
   const handleNavClick = () => {
     if (isMobile && onClose) {
       onClose();
     }
   };
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login');
+  };
+
+  const companyName = settings?.name || 'Mi Taller';
+  const shortName = companyName.split(' ')[0]?.slice(0, 8) || 'Taller';
 
   return (
     <aside
@@ -54,10 +68,16 @@ export function Sidebar({ onClose }: SidebarProps) {
       <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
         {(!collapsed || isMobile) && (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
-              <Wrench className="w-5 h-5 text-sidebar-primary-foreground" />
+            <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center overflow-hidden">
+              {settings?.logo_url ? (
+                <img src={settings.logo_url} alt="Logo" className="w-full h-full object-contain" />
+              ) : (
+                <Wrench className="w-5 h-5 text-sidebar-primary-foreground" />
+              )}
             </div>
-            <span className="font-bold text-sidebar-foreground text-lg">TechFix</span>
+            <span className="font-bold text-sidebar-foreground text-lg truncate max-w-[140px]">
+              {shortName}
+            </span>
           </div>
         )}
         {isMobile ? (
@@ -102,10 +122,26 @@ export function Sidebar({ onClose }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border">
+      <div className="p-4 border-t border-sidebar-border space-y-3">
+        {(!collapsed || isMobile) && user && (
+          <div className="text-xs text-sidebar-foreground/70 truncate">
+            {user.email}
+          </div>
+        )}
+        <button
+          onClick={handleLogout}
+          className={cn(
+            'sidebar-item text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 w-full',
+            collapsed && !isMobile && 'justify-center'
+          )}
+          title={collapsed && !isMobile ? 'Cerrar sesión' : undefined}
+        >
+          <LogOut className="w-5 h-5 flex-shrink-0" />
+          {(!collapsed || isMobile) && <span className="font-medium">Cerrar sesión</span>}
+        </button>
         {(!collapsed || isMobile) && (
           <div className="text-xs text-sidebar-foreground/50 text-center">
-            © 2025 TechFix Pro
+            © 2025 {companyName}
           </div>
         )}
       </div>

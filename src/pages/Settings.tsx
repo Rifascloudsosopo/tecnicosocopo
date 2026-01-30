@@ -104,9 +104,9 @@ export default function Settings() {
 
     // Also update printer_size separately since it might not be in the type
     if (settings?.id) {
-      await supabase
-        .from('company_settings')
-        .update({ printer_size: formData.printer_size } as any)
+      await (supabase
+        .from('company_settings') as any)
+        .update({ printer_size: formData.printer_size })
         .eq('id', settings.id);
     }
   }
@@ -158,8 +158,8 @@ export default function Settings() {
       setFormData({ ...formData, logo_url: logoUrl });
       
       if (settings?.id) {
-        await supabase
-          .from('company_settings')
+        await (supabase
+          .from('company_settings') as any)
           .update({ logo_url: logoUrl })
           .eq('id', settings.id);
       }
