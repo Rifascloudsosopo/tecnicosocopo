@@ -164,6 +164,14 @@
   .input-search {
     @apply pl-10 bg-background border-border focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all;
   }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 @layer utilities {
