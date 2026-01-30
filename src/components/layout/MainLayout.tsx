@@ -2,17 +2,19 @@ import { ReactNode, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
 import { OnlineStatusBadge } from '@/components/ui/OnlineStatusBadge';
-import { Menu, X } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { SidebarProvider, useSidebarContext } from '@/contexts/SidebarContext';
 
 interface MainLayoutProps {
   children: ReactNode;
 }
 
-export function MainLayout({ children }: MainLayoutProps) {
+function MainLayoutContent({ children }: MainLayoutProps) {
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { collapsed } = useSidebarContext();
 
   return (
     <div className="min-h-screen bg-background">
@@ -31,7 +33,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       )}
 
       {/* Main Content */}
-      <main className={`transition-all duration-300 ${isMobile ? 'ml-0 pb-20' : 'ml-64'}`}>
+      <main className={`transition-all duration-300 ${isMobile ? 'ml-0 pb-20' : collapsed ? 'ml-16' : 'ml-64'}`}>
         {/* Mobile Header */}
         {isMobile && (
           <header className="sticky top-0 z-30 flex items-center justify-between px-4 h-14 bg-background/95 backdrop-blur border-b border-border">
@@ -61,5 +63,13 @@ export function MainLayout({ children }: MainLayoutProps) {
       {/* Mobile Bottom Nav */}
       {isMobile && <MobileNav />}
     </div>
+  );
+}
+
+export function MainLayout({ children }: MainLayoutProps) {
+  return (
+    <SidebarProvider>
+      <MainLayoutContent>{children}</MainLayoutContent>
+    </SidebarProvider>
   );
 }

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -20,6 +19,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { usePermissions, Permission } from '@/hooks/usePermissions';
+import { useSidebarContext } from '@/contexts/SidebarContext';
 
 interface MenuItem {
   icon: typeof LayoutDashboard;
@@ -44,13 +44,13 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onClose }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { signOut, user } = useAuth();
   const { settings } = useCompanySettings();
   const { isAdmin, can, loading: permissionsLoading } = usePermissions();
+  const { collapsed, toggleCollapsed } = useSidebarContext();
 
   const handleNavClick = () => {
     if (isMobile && onClose) {
@@ -111,7 +111,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           </Button>
         ) : (
           <button
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={toggleCollapsed}
             className="p-1.5 rounded-lg hover:bg-sidebar-accent text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
           >
             {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
