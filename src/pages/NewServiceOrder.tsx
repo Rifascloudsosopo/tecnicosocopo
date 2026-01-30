@@ -217,10 +217,20 @@ export default function NewServiceOrder() {
       return;
     }
 
-    if (!deviceData.brand || !deviceData.model || !diagnosis.issue) {
+    if (!deviceData.model || !diagnosis.issue) {
       toast({
         title: 'Error',
         description: 'Complete los datos del equipo y diagnóstico',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate that total to charge is not less than costs
+    if (totalToCharge > 0 && totalToCharge < subtotal) {
+      toast({
+        title: 'Error',
+        description: `El monto total ($${totalToCharge.toFixed(2)}) no puede ser menor que los repuestos y gastos ($${subtotal.toFixed(2)})`,
         variant: 'destructive',
       });
       return;
@@ -255,7 +265,7 @@ export default function NewServiceOrder() {
         .insert({
           customer_id: customerId,
           technician_id: currentTechnicianId || null,
-          device_brand: deviceData.brand.trim(),
+          device_brand: deviceData.brand.trim() || 'Sin marca',
           device_model: deviceData.model.trim(),
           device_color: deviceData.color.trim() || null,
           device_imei: deviceData.imei.trim() || null,
@@ -490,25 +500,14 @@ export default function NewServiceOrder() {
             <CardContent className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="brand">Marca *</Label>
-                  <Select
+                  <Label htmlFor="brand">Marca</Label>
+                  <Input
+                    id="brand"
+                    placeholder="Samsung, Apple, Xiaomi..."
                     value={deviceData.brand}
-                    onValueChange={(v) => setDeviceData({ ...deviceData, brand: v })}
-                  >
-                    <SelectTrigger className="mt-1.5">
-                      <SelectValue placeholder="Seleccionar marca" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Samsung">Samsung</SelectItem>
-                      <SelectItem value="Apple">Apple (iPhone)</SelectItem>
-                      <SelectItem value="Xiaomi">Xiaomi</SelectItem>
-                      <SelectItem value="Huawei">Huawei</SelectItem>
-                      <SelectItem value="Motorola">Motorola</SelectItem>
-                      <SelectItem value="Oppo">Oppo</SelectItem>
-                      <SelectItem value="Realme">Realme</SelectItem>
-                      <SelectItem value="Otro">Otro</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={(e) => setDeviceData({ ...deviceData, brand: e.target.value })}
+                    className="mt-1.5"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="model">Modelo *</Label>
@@ -586,7 +585,7 @@ export default function NewServiceOrder() {
                 </Button>
                 <Button
                   onClick={() => setStep(3)}
-                  disabled={!deviceData.brand || !deviceData.model}
+                  disabled={!deviceData.model}
                 >
                   Continuar
                 </Button>
