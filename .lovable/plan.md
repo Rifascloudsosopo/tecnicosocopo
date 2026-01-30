@@ -1,160 +1,132 @@
 
 
-# Sistema de Permisos Personalizables por Técnico
+# Plan de Optimización para Evitar Límites de Supabase
 
-## Resumen
+## Estado Actual de tu Base de Datos
 
-Implementar un sistema donde el administrador pueda configurar permisos individuales para cada técnico, controlando qué módulos pueden ver y qué acciones pueden realizar.
+| Tabla | Registros |
+|-------|-----------|
+| service_orders | 4 |
+| spare_parts_usage | 4 |
+| order_additional_costs | 4 |
+| customers | 2 |
+| order_payments | 2 |
+| technicians | 1 |
+| spare_parts | 1 |
+| activity_logs | 0 |
 
-## Cómo Funcionará
+**Estás muy lejos de los límites** - Con 500 MB disponibles, puedes almacenar decenas de miles de órdenes sin problemas.
 
-### Para el Administrador:
-1. El admin crea usuarios desde Supabase Dashboard
-2. En la página de Técnicos, al crear/editar un técnico:
-   - Vincula el usuario
-   - Configura permisos específicos (qué puede ver, qué puede hacer)
+---
 
-### Para el Técnico:
-1. Inicia sesión con su email y contraseña
-2. Solo ve los módulos que el admin le habilitó
-3. Solo puede realizar las acciones permitidas
+## Optimizaciones Recomendadas
 
-## Estructura de Permisos
+### 1. Paginación del Lado del Servidor (Server-Side Pagination)
+**Problema actual:** Las consultas traen TODOS los datos a la vez
+**Mejora:** Solo traer 20 registros por página desde la base de datos
 
-El sistema tendrá permisos modulares que el admin puede activar/desactivar por técnico:
+**Impacto:** Reduce el uso de transferencia de datos (egress) - el límite más probable de alcanzar
 
-| Permiso | Descripción |
-|---------|-------------|
-| `view_all_orders` | Ver todas las órdenes (si no, solo las suyas) |
-| `create_orders` | Crear nuevas órdenes de servicio |
-| `edit_orders` | Editar órdenes (propias o todas según `view_all_orders`) |
-| `change_status` | Cambiar estado de órdenes |
-| `change_status_delivered` | Marcar como "Entregado" (permiso especial) |
-| `view_customers` | Ver lista de clientes |
-| `manage_customers` | Crear/editar clientes |
-| `view_inventory` | Ver inventario |
-| `manage_inventory` | Modificar inventario |
-| `view_reports` | Ver reportes |
-| `view_settings` | Ver configuración |
-| `manage_settings` | Modificar configuración |
-| `manage_technicians` | Gestionar técnicos |
-| `manage_whatsapp` | Gestionar plantillas WhatsApp |
+**Páginas afectadas:**
+- ServiceOrders.tsx
+- Customers.tsx  
+- Inventory.tsx
+- Reports.tsx
 
-## Cambios en la Base de Datos
+### 2. Limitar Consultas del Dashboard
+**Problema actual:** El dashboard carga todas las órdenes para contar estadísticas
+**Mejora:** Usar `COUNT(*)` con `head: true` en vez de traer todos los registros
 
-### Nueva tabla: `technician_permissions`
+### 3. Caché Inteligente con React Query
+**Problema actual:** Cada visita a una página hace una consulta nueva
+**Mejora:** Configurar `staleTime` para evitar consultas repetitivas en pocos minutos
 
-```text
-┌─────────────────────────────────────────────────────────┐
-│ technician_permissions                                   │
-├──────────────────────┬──────────────────────────────────┤
-│ id                   │ uuid (PK)                        │
-│ technician_id        │ uuid (FK -> technicians.id)      │
-│ permission           │ text (nombre del permiso)        │
-│ granted              │ boolean (activado/desactivado)   │
-│ created_at           │ timestamp                        │
-│ updated_at           │ timestamp                        │
-└──────────────────────┴──────────────────────────────────┘
-```
+### 4. Archivado de Órdenes Antiguas (Opcional - para el futuro)
+**Mejora:** Crear una función para exportar y eliminar órdenes entregadas con más de 2 años
+**Impacto:** Mantiene la base de datos ligera a largo plazo
 
-### Actualizar tabla `user_roles`
+### 5. Eliminar Logs de Actividad No Usados
+**Observación:** La tabla `activity_logs` existe pero está vacía y no se usa
+**Mejora:** Eliminarla si no se necesita, o implementarla con limpieza automática
 
-- Asignar rol `admin` al primer usuario
-- Asignar rol `technician` automáticamente cuando se vincula un técnico
-
-## Cambios en la Aplicación
-
-### 1. Hook de Permisos (`usePermissions`)
-- Detectar si el usuario es admin (tiene todos los permisos)
-- Para técnicos: cargar permisos desde `technician_permissions`
-- Exponer funciones: `can('view_orders')`, `isAdmin`, etc.
-
-### 2. Página de Técnicos
-- Agregar sección de "Permisos" al crear/editar técnico
-- Lista de checkboxes para cada permiso
-- Guardar permisos en la base de datos
-
-### 3. Navegación (Sidebar)
-- Filtrar menú según permisos del usuario
-- Ocultar módulos no permitidos
-
-### 4. Página de Órdenes
-- Si `view_all_orders` es false: filtrar solo órdenes del técnico
-- Si `change_status` es false: deshabilitar selector de estado
-- Si `change_status_delivered` es false: ocultar opción "Entregado"
-
-### 5. Protección de Rutas
-- Cada página verifica permisos antes de mostrar contenido
-- Redirigir a dashboard si no tiene permiso
-
-### 6. Página de Login
-- Mostrar mensaje claro cuando usuario no tiene permisos
-
-## Flujo Completo
-
-```text
-ADMINISTRADOR                          TÉCNICO
-    │                                      │
-    ▼                                      │
-[Supabase Dashboard]                       │
-Crear usuario con email/clave              │
-    │                                      │
-    ▼                                      │
-[App - Página Técnicos]                    │
-1. Crear técnico                           │
-2. Vincular usuario                        │
-3. Configurar permisos ─────────────┐      │
-    │                               │      │
-    ▼                               ▼      │
-[Base de Datos]              [Permisos     │
-- technicians                 Guardados]   │
-- user_roles (technician)          │       │
-- technician_permissions ──────────┘       │
-                                           │
-                                           ▼
-                               [App - Login]
-                               Email + Contraseña
-                                           │
-                                           ▼
-                               [Dashboard Personalizado]
-                               Solo ve módulos permitidos
-                               Solo acciones autorizadas
-```
-
-## Permisos Predeterminados
-
-Cuando se crea un técnico, tendrá estos permisos por defecto (el admin puede cambiarlos):
-
-- `view_all_orders`: NO (solo sus órdenes)
-- `create_orders`: SÍ
-- `edit_orders`: SÍ
-- `change_status`: SÍ
-- `change_status_delivered`: NO
-- `view_customers`: SÍ
-- `manage_customers`: NO
-- `view_inventory`: SÍ
-- `manage_inventory`: NO
-- Todos los demás: NO
+---
 
 ## Detalles Técnicos
 
-### Archivos a crear:
-1. `src/hooks/usePermissions.ts` - Hook para verificar permisos
-2. `supabase/migrations/xxx_permissions.sql` - Migración de BD
+### Cambio 1: Server-Side Pagination en ServiceOrders
 
-### Archivos a modificar:
-1. `src/pages/Technicians.tsx` - Agregar UI de permisos
-2. `src/components/layout/Sidebar.tsx` - Filtrar menú
-3. `src/pages/ServiceOrders.tsx` - Aplicar permisos
-4. `src/pages/Dashboard.tsx` - Mostrar solo datos permitidos
-5. `src/pages/Customers.tsx` - Verificar permisos
-6. `src/pages/Inventory.tsx` - Verificar permisos
-7. `src/pages/Reports.tsx` - Verificar permisos
-8. `src/pages/Settings.tsx` - Verificar permisos
-9. `src/pages/WhatsAppTemplates.tsx` - Verificar permisos
+```typescript
+// Antes (trae TODO)
+const { data } = await supabase
+  .from('service_orders')
+  .select('*')
+  .order('created_at', { ascending: false });
 
-### Seguridad:
-- Validación en frontend (UX) + RLS en Supabase (seguridad real)
-- Los administradores pueden ver/hacer todo
-- Los técnicos solo acceden según sus permisos configurados
+// Después (trae solo una página)
+const { data, count } = await supabase
+  .from('service_orders')
+  .select('*', { count: 'exact' })
+  .order('created_at', { ascending: false })
+  .range((page - 1) * 20, page * 20 - 1);
+```
+
+### Cambio 2: Optimizar Dashboard
+
+```typescript
+// Antes (trae todos los registros)
+const { data: orders } = await supabase
+  .from('service_orders')
+  .select('id, status, initial_budget, total_paid');
+
+// Después (solo cuenta por estado)
+const { count: pendingCount } = await supabase
+  .from('service_orders')
+  .select('id', { count: 'exact', head: true })
+  .eq('status', 'pending');
+```
+
+### Cambio 3: Caché con React Query
+
+```typescript
+// Configurar tiempos de caché
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutos
+      gcTime: 10 * 60 * 1000,   // 10 minutos
+    },
+  },
+});
+```
+
+### Cambio 4: Función de Archivado
+
+Nueva función en Settings para:
+- Exportar órdenes entregadas más antiguas que X meses
+- Descargar como backup JSON
+- Eliminar de la base de datos (opcional)
+
+---
+
+## Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/pages/ServiceOrders.tsx` | Server-side pagination |
+| `src/pages/Customers.tsx` | Server-side pagination |
+| `src/pages/Inventory.tsx` | Server-side pagination |
+| `src/pages/Dashboard.tsx` | Optimizar consultas con COUNT |
+| `src/pages/Reports.tsx` | Limitar rango de fechas por defecto |
+| `src/App.tsx` | Configurar React Query cache |
+| `src/pages/Settings.tsx` | Agregar opción de archivado |
+
+---
+
+## Estimación de Límites
+
+Con las optimizaciones, tu sistema podría manejar:
+- **~50,000+ órdenes** antes de preocuparte por espacio
+- **~100,000+ consultas/mes** dentro del egress gratuito
+
+**Recomendación:** Implementar las optimizaciones 1-3 ahora, y la opción de archivado cuando superes las 5,000 órdenes.
 
