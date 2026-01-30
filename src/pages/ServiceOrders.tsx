@@ -89,6 +89,7 @@ export default function ServiceOrders() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
@@ -112,26 +113,46 @@ export default function ServiceOrders() {
   const { settings } = useCompanySettings();
   const { templates, getTemplateByStatus } = useWhatsAppTemplates();
 
+  // Server-side pagination - reload when page or filters change
   useEffect(() => {
     loadOrders();
-  }, []);
+  }, [currentPage, statusFilter, searchQuery]);
 
   async function loadOrders() {
     setLoading(true);
     try {
-      const { data, error } = await (supabase
-        .from('service_orders') as any)
+      // Build query with server-side pagination
+      let query = (supabase.from('service_orders') as any)
         .select(`
           *,
           customers (name, phone, cedula),
           technicians (name),
           spare_parts_usage (id, quantity, unit_price, spare_parts(name)),
           order_additional_costs (id, description, amount)
-        `)
+        `, { count: 'exact' })
         .order('created_at', { ascending: false });
+
+      // Apply status filter at database level
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+
+      // Apply search filter at database level
+      if (searchQuery.trim()) {
+        const search = searchQuery.trim().toLowerCase();
+        query = query.or(`order_number.ilike.%${search}%,device_brand.ilike.%${search}%,device_model.ilike.%${search}%`);
+      }
+
+      // Apply pagination
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      query = query.range(from, to);
+
+      const { data, count, error } = await query;
 
       if (error) throw error;
       setOrders((data || []) as unknown as ServiceOrder[]);
+      setTotalCount(count || 0);
     } catch (error: any) {
       console.error('Error loading orders:', error);
       toast({
@@ -144,31 +165,25 @@ export default function ServiceOrders() {
     }
   }
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      const matchesSearch =
-        order.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.customers?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.device_brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.device_model.toLowerCase().includes(searchQuery.toLowerCase());
+  // Server-side pagination - orders are already filtered and paginated from DB
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
 
-      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+  // Debounce search to avoid too many API calls
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (debouncedSearch !== searchQuery) {
+        setCurrentPage(1); // Reset to page 1 on new search
+      }
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-      return matchesSearch && matchesStatus;
-    });
-  }, [orders, searchQuery, statusFilter]);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
-  const paginatedOrders = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredOrders, currentPage, itemsPerPage]);
-
-  // Reset to page 1 when filters change
+  // Reset to page 1 when status filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter]);
+  }, [statusFilter]);
 
   function handleWhatsApp(order: ServiceOrder) {
     if (!order.customers?.phone) return;
@@ -438,7 +453,7 @@ export default function ServiceOrders() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-foreground">Órdenes de Servicio</h1>
             <p className="text-muted-foreground mt-1">
-              Gestiona las reparaciones ({orders.length} órdenes)
+              Gestiona las reparaciones ({totalCount} órdenes)
             </p>
           </div>
           <Link to="/ordenes/nueva" className="w-full sm:w-auto">
@@ -490,14 +505,14 @@ export default function ServiceOrders() {
             {/* Mobile Card View */}
             {isMobile ? (
               <div className="space-y-4">
-                {paginatedOrders.map((order) => (
+                {orders.map((order) => (
                   <OrderCard key={order.id} order={order} />
                 ))}
                 <SimplePagination
                   currentPage={currentPage}
                   totalPages={totalPages}
                   onPageChange={setCurrentPage}
-                  totalItems={filteredOrders.length}
+                  totalItems={totalCount}
                   itemsPerPage={itemsPerPage}
                 />
               </div>
@@ -520,7 +535,7 @@ export default function ServiceOrders() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {paginatedOrders.map((order) => (
+                      {orders.map((order) => (
                         <tr key={order.id} className="hover:bg-muted/30 transition-colors">
                           <td className="px-3 py-2">
                             <span className="font-semibold text-primary text-sm">{order.order_number}</span>
@@ -659,13 +674,13 @@ export default function ServiceOrders() {
                   currentPage={currentPage}
                   totalPages={totalPages}
                   onPageChange={setCurrentPage}
-                  totalItems={filteredOrders.length}
+                  totalItems={totalCount}
                   itemsPerPage={itemsPerPage}
                 />
               </div>
             )}
 
-            {filteredOrders.length === 0 && !loading && (
+            {orders.length === 0 && !loading && (
               <div className="text-center py-12">
                 <p className="text-muted-foreground">No se encontraron órdenes</p>
                 <Link to="/ordenes/nueva">

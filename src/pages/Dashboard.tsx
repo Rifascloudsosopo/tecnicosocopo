@@ -58,43 +58,49 @@ export default function Dashboard() {
   async function loadDashboardData() {
     setLoading(true);
     try {
-      // Get orders stats
-      const { data: orders } = await (supabase
-        .from('service_orders') as any)
-        .select('id, status, initial_budget, total_paid');
+      // Use COUNT queries with head:true - much more efficient than fetching all records
+      const [
+        { count: totalOrders },
+        { count: pendingOrders },
+        { count: inProgressOrders },
+        { count: completedCount },
+        { count: deliveredCount },
+        { count: customersCount },
+        { data: revenueData },
+        { data: lowStock },
+        { data: recent },
+      ] = await Promise.all([
+        // Total orders count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }),
+        // Pending count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        // In progress count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
+        // Completed count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+        // Delivered count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
+        // Customers count
+        (supabase.from('customers') as any).select('id', { count: 'exact', head: true }),
+        // Revenue - only fetch total_paid column (minimal data transfer)
+        (supabase.from('service_orders') as any).select('total_paid'),
+        // Low stock items - only fetch necessary columns
+        (supabase.from('spare_parts') as any).select('stock, min_stock'),
+        // Recent orders - limited to 5
+        (supabase.from('service_orders') as any)
+          .select('id, order_number, device_brand, device_model, status, created_at, customers (name)')
+          .order('created_at', { ascending: false })
+          .limit(5),
+      ]);
 
-      const pendingOrders = orders?.filter((o: any) => o.status === 'pending').length || 0;
-      const inProgressOrders = orders?.filter((o: any) => o.status === 'in_progress').length || 0;
-      const completedOrders = orders?.filter((o: any) => o.status === 'completed' || o.status === 'delivered').length || 0;
-      const totalRevenue = orders?.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0) || 0;
-
-      // Get customers count
-      const { count: customersCount } = await (supabase
-        .from('customers') as any)
-        .select('id', { count: 'exact', head: true });
-
-      // Get low stock items
-      const { data: lowStock } = await (supabase
-        .from('spare_parts') as any)
-        .select('id, stock, min_stock');
-      
+      const totalRevenue = revenueData?.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0) || 0;
       const lowStockCount = lowStock?.filter((p: any) => (p.stock || 0) <= (p.min_stock || 5)).length || 0;
 
-      // Get recent orders
-      const { data: recent } = await (supabase
-        .from('service_orders') as any)
-        .select(`
-          id, order_number, device_brand, device_model, status, created_at,
-          customers (name)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
       setStats({
-        totalOrders: orders?.length || 0,
-        pendingOrders,
-        inProgressOrders,
-        completedOrders,
+        totalOrders: totalOrders || 0,
+        pendingOrders: pendingOrders || 0,
+        inProgressOrders: inProgressOrders || 0,
+        completedOrders: (completedCount || 0) + (deliveredCount || 0),
         totalCustomers: customersCount || 0,
         lowStockItems: lowStockCount,
         totalRevenue,
