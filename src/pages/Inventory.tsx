@@ -883,13 +883,12 @@ export default function Inventory() {
         <div className="glass-card rounded-xl p-4 mb-6">
           <div className="flex flex-col gap-3">
             <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <div className="flex-1">
                 <Input
                   placeholder="Buscar repuesto..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="input-search"
+                  className="bg-background border-border focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 />
               </div>
               <div className="flex items-center gap-2">
