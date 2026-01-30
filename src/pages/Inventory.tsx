@@ -928,14 +928,14 @@ export default function Inventory() {
                   <table className="w-full">
                     <thead>
                       <tr className="table-header">
-                        <th className="px-5 py-3 text-left">Repuesto</th>
-                        <th className="px-5 py-3 text-left">Categoría</th>
-                        <th className="px-5 py-3 text-left">Compatibilidad</th>
-                        <th className="px-5 py-3 text-right">P. Compra</th>
-                        <th className="px-5 py-3 text-right">P. Venta</th>
-                        <th className="px-5 py-3 text-center">Stock</th>
-                        <th className="px-5 py-3 text-center">Fecha Ingreso</th>
-                        {canManageInventory && <th className="px-5 py-3 text-center">Acciones</th>}
+                        <th className="px-3 py-2 text-left text-xs">Repuesto</th>
+                        <th className="px-3 py-2 text-left text-xs">Categoría</th>
+                        <th className="px-3 py-2 text-left text-xs">Compatibilidad</th>
+                        <th className="px-3 py-2 text-right text-xs">P. Compra</th>
+                        <th className="px-3 py-2 text-right text-xs">P. Venta</th>
+                        <th className="px-3 py-2 text-center text-xs">Stock</th>
+                        <th className="px-3 py-2 text-center text-xs">Fecha</th>
+                        {canManageInventory && <th className="px-3 py-2 text-center text-xs">Acciones</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -945,37 +945,37 @@ export default function Inventory() {
 
                         return (
                           <tr key={part.id} className="hover:bg-muted/30 transition-colors">
-                            <td className="px-5 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 rounded-lg bg-primary/10">
-                                  <Package className="w-4 h-4 text-primary" />
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <div className="p-1.5 rounded-md bg-primary/10">
+                                  <Package className="w-3 h-3 text-primary" />
                                 </div>
                                 <div>
-                                  <p className="font-medium text-foreground">{part.name}</p>
+                                  <p className="font-medium text-foreground text-sm">{part.name}</p>
                                   {part.brand && (
-                                    <p className="text-sm text-muted-foreground">{part.brand}</p>
+                                    <p className="text-xs text-muted-foreground">{part.brand}</p>
                                   )}
                                 </div>
                               </div>
                             </td>
-                            <td className="px-5 py-4">
-                              <span className="status-badge bg-secondary text-secondary-foreground">
+                            <td className="px-3 py-2">
+                              <span className="status-badge bg-secondary text-secondary-foreground text-xs px-2 py-0.5">
                                 {part.category}
                               </span>
                             </td>
-                            <td className="px-5 py-4 text-sm text-muted-foreground">
+                            <td className="px-3 py-2 text-xs text-muted-foreground">
                               {part.model_compatibility || '-'}
                             </td>
-                            <td className="px-5 py-4 text-right font-medium">
+                            <td className="px-3 py-2 text-right text-sm">
                               ${part.purchase_price.toFixed(2)}
                             </td>
-                            <td className="px-5 py-4 text-right font-semibold text-success">
+                            <td className="px-3 py-2 text-right text-sm font-semibold text-success">
                               ${part.sale_price.toFixed(2)}
                             </td>
-                            <td className="px-5 py-4 text-center">
+                            <td className="px-3 py-2 text-center">
                               <span
                                 className={cn(
-                                  'font-bold text-lg',
+                                  'font-bold text-sm',
                                   isOutOfStock && 'text-destructive',
                                   isLowStock && !isOutOfStock && 'text-warning',
                                   !isLowStock && 'text-foreground'
@@ -984,39 +984,39 @@ export default function Inventory() {
                                 {part.stock}
                               </span>
                               <span className="text-xs text-muted-foreground ml-1">
-                                / {part.min_stock} min
+                                /{part.min_stock}
                               </span>
                             </td>
-                            <td className="px-5 py-4 text-center text-sm text-muted-foreground">
-                              {format(new Date(part.created_at), 'dd/MM/yyyy', { locale: es })}
+                            <td className="px-3 py-2 text-center text-xs text-muted-foreground">
+                              {format(new Date(part.created_at), 'dd/MM/yy', { locale: es })}
                             </td>
                             {canManageInventory && (
-                              <td className="px-5 py-4">
-                                <div className="flex items-center justify-center gap-1">
+                              <td className="px-3 py-2">
+                                <div className="flex items-center justify-center gap-0.5">
                                   <Button 
                                     variant="ghost" 
                                     size="icon" 
-                                    className="h-8 w-8"
+                                    className="h-7 w-7"
                                     onClick={() => handleStockDialog(part)}
                                     title="Ajustar stock"
                                   >
-                                    <ArrowUpDown className="w-4 h-4" />
+                                    <ArrowUpDown className="w-3 h-3" />
                                   </Button>
                                   <Button 
                                     variant="ghost" 
                                     size="icon" 
-                                    className="h-8 w-8"
+                                    className="h-7 w-7"
                                     onClick={() => handleEdit(part)}
                                   >
-                                    <Edit className="w-4 h-4" />
+                                    <Edit className="w-3 h-3" />
                                   </Button>
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
                                     onClick={() => deletePart(part)}
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Trash2 className="w-3 h-3" />
                                   </Button>
                                 </div>
                               </td>

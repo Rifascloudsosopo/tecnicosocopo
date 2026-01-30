@@ -455,50 +455,50 @@ export default function ServiceOrders() {
                 <table className="w-full">
                     <thead>
                       <tr className="table-header">
-                        <th className="px-5 py-3 text-left">Orden</th>
-                        <th className="px-5 py-3 text-left">Cliente</th>
-                        <th className="px-5 py-3 text-left">Equipo</th>
-                        <th className="px-5 py-3 text-left">Falla</th>
-                        <th className="px-5 py-3 text-left">Técnico</th>
-                        <th className="px-5 py-3 text-left">Estado</th>
-                        <th className="px-5 py-3 text-left">Total</th>
-                        <th className="px-5 py-3 text-left">Pendiente</th>
-                        <th className="px-5 py-3 text-center">Acciones</th>
+                        <th className="px-3 py-2 text-left text-xs">Orden</th>
+                        <th className="px-3 py-2 text-left text-xs">Cliente</th>
+                        <th className="px-3 py-2 text-left text-xs">Equipo</th>
+                        <th className="px-3 py-2 text-left text-xs">Falla</th>
+                        <th className="px-3 py-2 text-left text-xs">Técnico</th>
+                        <th className="px-3 py-2 text-left text-xs">Estado</th>
+                        <th className="px-3 py-2 text-left text-xs">Total</th>
+                        <th className="px-3 py-2 text-left text-xs">Pendiente</th>
+                        <th className="px-3 py-2 text-center text-xs">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       {filteredOrders.map((order) => (
                         <tr key={order.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="px-5 py-4">
-                            <span className="font-semibold text-primary">{order.order_number}</span>
-                            <p className="text-xs text-muted-foreground mt-0.5">
+                          <td className="px-3 py-2">
+                            <span className="font-semibold text-primary text-sm">{order.order_number}</span>
+                            <p className="text-xs text-muted-foreground">
                               {new Date(order.created_at).toLocaleDateString('es-ES')}
                             </p>
                           </td>
-                          <td className="px-5 py-4">
-                            <p className="font-medium text-foreground">{order.customers?.name || 'N/A'}</p>
-                            <p className="text-sm text-muted-foreground">{order.customers?.phone}</p>
+                          <td className="px-3 py-2">
+                            <p className="font-medium text-foreground text-sm">{order.customers?.name || 'N/A'}</p>
+                            <p className="text-xs text-muted-foreground">{order.customers?.phone}</p>
                           </td>
-                          <td className="px-5 py-4">
-                            <p className="font-medium text-foreground">{order.device_brand}</p>
-                            <p className="text-sm text-muted-foreground">{order.device_model}</p>
+                          <td className="px-3 py-2">
+                            <p className="font-medium text-foreground text-sm">{order.device_brand}</p>
+                            <p className="text-xs text-muted-foreground">{order.device_model}</p>
                           </td>
-                          <td className="px-5 py-4">
-                            <p className="text-sm text-foreground max-w-xs truncate">{order.reported_issue}</p>
+                          <td className="px-3 py-2">
+                            <p className="text-xs text-foreground max-w-xs truncate">{order.reported_issue}</p>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-3 py-2">
                             {order.technicians?.name ? (
-                              <span className="text-foreground">{order.technicians.name}</span>
+                              <span className="text-foreground text-sm">{order.technicians.name}</span>
                             ) : (
-                              <span className="text-muted-foreground italic">Sin asignar</span>
+                              <span className="text-muted-foreground text-xs italic">Sin asignar</span>
                             )}
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-3 py-2">
                             <Select
                               value={order.status}
                               onValueChange={(value) => handleStatusChange(order.id, order.status, value)}
                             >
-                              <SelectTrigger className="w-32 h-8">
+                              <SelectTrigger className="w-28 h-7 text-xs">
                                 <StatusBadge status={order.status} />
                               </SelectTrigger>
                               <SelectContent>
@@ -510,68 +510,68 @@ export default function ServiceOrders() {
                               </SelectContent>
                             </Select>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-3 py-2">
                             {(() => {
                               const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                               const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                               const orderTotal = order.initial_budget + partsTotal + costsTotal;
                               return (
-                                <p className="font-semibold text-foreground">${orderTotal.toFixed(2)}</p>
+                                <p className="font-semibold text-foreground text-sm">${orderTotal.toFixed(2)}</p>
                               );
                             })()}
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-3 py-2">
                             {(() => {
                               const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                               const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                               const orderTotal = order.initial_budget + partsTotal + costsTotal;
                               const pendingAmount = orderTotal - order.total_paid;
                               return (
-                                <p className={`font-semibold ${pendingAmount > 0 ? 'text-destructive' : 'text-success'}`}>
+                                <p className={`font-semibold text-sm ${pendingAmount > 0 ? 'text-destructive' : 'text-success'}`}>
                                   ${pendingAmount.toFixed(2)}
                                 </p>
                               );
                             })()}
                           </td>
-                          <td className="px-5 py-4">
-                            <div className="flex items-center justify-center gap-1">
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-center gap-0.5">
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8"
+                                className="h-7 w-7"
                                 title="Ver detalle"
                                 onClick={() => setSelectedOrder(order)}
                               >
-                                <Eye className="w-4 h-4" />
+                                <Eye className="w-3.5 h-3.5" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8"
+                                className="h-7 w-7"
                                 title="Repuestos y Costos"
                                 onClick={() => setCostsDialogOrderId(order.id)}
                               >
-                                <DollarSign className="w-4 h-4" />
+                                <DollarSign className="w-3.5 h-3.5" />
                               </Button>
                               {order.customers?.phone && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-success hover:text-success"
+                                  className="h-7 w-7 text-success hover:text-success"
                                   title="WhatsApp"
                                   onClick={() => handleWhatsApp(order)}
                                 >
-                                  <MessageCircle className="w-4 h-4" />
+                                  <MessageCircle className="w-3.5 h-3.5" />
                                 </Button>
                               )}
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8"
+                                className="h-7 w-7"
                                 title={order.status === 'delivered' ? 'Imprimir Entrega' : 'Imprimir Entrada'}
                                 onClick={() => handlePrint(order, order.status === 'delivered' ? 'delivery' : 'entry')}
                               >
-                                <Printer className="w-4 h-4" />
+                                <Printer className="w-3.5 h-3.5" />
                               </Button>
                             </div>
                           </td>

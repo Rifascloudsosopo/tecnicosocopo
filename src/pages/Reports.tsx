@@ -9,11 +9,19 @@ import {
   BarChart3,
   PieChart,
   Loader2,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  List,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -21,6 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import {
   BarChart,
   Bar,
@@ -34,8 +48,10 @@ import {
   Cell,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
-import { startOfWeek, startOfMonth, startOfYear, endOfDay, format, subDays } from 'date-fns';
+import { startOfWeek, startOfMonth, startOfYear, endOfDay, format, subDays, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 interface ReportStats {
   totalRevenue: number;
@@ -70,9 +86,34 @@ interface DailyRevenue {
   gastos: number;
 }
 
+interface OrderTransaction {
+  id: string;
+  order_number: string;
+  customer_name: string;
+  device: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'abandoned';
+  total: number;
+  paid: number;
+  pending: number;
+  created_at: string;
+}
+
+interface PaymentTransaction {
+  id: string;
+  order_number: string;
+  customer_name: string;
+  amount: number;
+  payment_method: string;
+  notes: string | null;
+  created_at: string;
+}
+
 export default function Reports() {
   const [period, setPeriod] = useState('week');
+  const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
+  const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
   const [loading, setLoading] = useState(true);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [stats, setStats] = useState<ReportStats>({
     totalRevenue: 0,
     totalCosts: 0,
@@ -86,33 +127,41 @@ export default function Reports() {
   const [issueData, setIssueData] = useState<IssueData[]>([]);
   const [technicianStats, setTechnicianStats] = useState<TechnicianStats[]>([]);
   const [revenueData, setRevenueData] = useState<DailyRevenue[]>([]);
+  const [orderTransactions, setOrderTransactions] = useState<OrderTransaction[]>([]);
+  const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
 
   useEffect(() => {
     loadReportData();
-  }, [period]);
+  }, [period, customDateFrom, customDateTo]);
 
   function getDateRange() {
     const now = new Date();
     let startDate: Date;
+    let endDate: Date = endOfDay(now);
 
-    switch (period) {
-      case 'today':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        break;
-      case 'week':
-        startDate = startOfWeek(now, { weekStartsOn: 1 });
-        break;
-      case 'month':
-        startDate = startOfMonth(now);
-        break;
-      case 'year':
-        startDate = startOfYear(now);
-        break;
-      default:
-        startDate = startOfWeek(now, { weekStartsOn: 1 });
+    if (period === 'custom' && customDateFrom) {
+      startDate = startOfDay(customDateFrom);
+      endDate = customDateTo ? endOfDay(customDateTo) : endOfDay(customDateFrom);
+    } else {
+      switch (period) {
+        case 'today':
+          startDate = startOfDay(now);
+          break;
+        case 'week':
+          startDate = startOfWeek(now, { weekStartsOn: 1 });
+          break;
+        case 'month':
+          startDate = startOfMonth(now);
+          break;
+        case 'year':
+          startDate = startOfYear(now);
+          break;
+        default:
+          startDate = startOfWeek(now, { weekStartsOn: 1 });
+      }
     }
 
-    return { startDate: startDate.toISOString(), endDate: endOfDay(now).toISOString() };
+    return { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
   }
 
   async function loadReportData() {
@@ -120,32 +169,76 @@ export default function Reports() {
     try {
       const { startDate, endDate } = getDateRange();
 
-      // Fetch orders in date range
+      // Fetch orders in date range with related data
       const { data: orders } = await (supabase
         .from('service_orders') as any)
         .select(`
-          id, status, initial_budget, total_paid, created_at, delivered_at,
-          device_brand, reported_issue, technician_id,
-          technicians (name)
+          id, order_number, status, initial_budget, total_paid, created_at, delivered_at,
+          device_brand, device_model, reported_issue, technician_id,
+          customers (name, phone),
+          technicians (name),
+          spare_parts_usage (id, quantity, unit_price),
+          order_additional_costs (id, amount)
         `)
         .gte('created_at', startDate)
-        .lte('created_at', endDate);
+        .lte('created_at', endDate)
+        .order('created_at', { ascending: false });
 
-      // Fetch spare parts usage for costs
-      const { data: partsUsage } = await (supabase
-        .from('spare_parts_usage') as any)
-        .select('unit_price, quantity, order_id')
-        .in('order_id', orders?.map((o: any) => o.id) || []);
+      // Fetch payments in date range
+      const { data: payments } = await (supabase
+        .from('order_payments') as any)
+        .select(`
+          id, amount, payment_method, notes, created_at, order_id,
+          service_orders (order_number, customers (name))
+        `)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .order('created_at', { ascending: false });
+
+      // Calculate order transactions
+      const transactions: OrderTransaction[] = (orders || []).map((o: any) => {
+        const partsTotal = o.spare_parts_usage?.reduce((sum: number, u: any) => sum + u.quantity * u.unit_price, 0) || 0;
+        const costsTotal = o.order_additional_costs?.reduce((sum: number, c: any) => sum + c.amount, 0) || 0;
+        const total = (o.initial_budget || 0) + partsTotal + costsTotal;
+        const paid = o.total_paid || 0;
+        return {
+          id: o.id,
+          order_number: o.order_number,
+          customer_name: o.customers?.name || 'N/A',
+          device: `${o.device_brand} ${o.device_model}`,
+          status: o.status,
+          total,
+          paid,
+          pending: total - paid,
+          created_at: o.created_at,
+        };
+      });
+      setOrderTransactions(transactions);
+
+      // Calculate payment transactions
+      const paymentTx: PaymentTransaction[] = (payments || []).map((p: any) => ({
+        id: p.id,
+        order_number: p.service_orders?.order_number || 'N/A',
+        customer_name: p.service_orders?.customers?.name || 'N/A',
+        amount: p.amount,
+        payment_method: p.payment_method,
+        notes: p.notes,
+        created_at: p.created_at,
+      }));
+      setPaymentTransactions(paymentTx);
 
       // Calculate stats
       const completedOrders = orders?.filter((o: any) => 
         o.status === 'completed' || o.status === 'delivered'
       ) || [];
       
-      const totalRevenue = orders?.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0) || 0;
-      const totalCosts = partsUsage?.reduce((sum: number, p: any) => 
-        sum + (Number(p.unit_price) * (p.quantity || 1)), 0
-      ) || 0;
+      const totalRevenue = payments?.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0) || 0;
+      
+      // Total costs from spare parts usage
+      const totalCosts = orders?.reduce((sum: number, o: any) => {
+        const partsCost = o.spare_parts_usage?.reduce((s: number, u: any) => s + (u.quantity * u.unit_price), 0) || 0;
+        return sum + partsCost;
+      }, 0) || 0;
 
       // Calculate average repair time (in days)
       let avgTime = 0;
@@ -221,8 +314,8 @@ export default function Reports() {
 
       // Calculate technician stats
       const techStats: Record<string, { completadas: number; totalDays: number; count: number }> = {};
-      completedOrders.forEach(o => {
-        const techName = (o.technicians as any)?.name || 'Sin asignar';
+      completedOrders.forEach((o: any) => {
+        const techName = o.technicians?.name || 'Sin asignar';
         if (!techStats[techName]) {
           techStats[techName] = { completadas: 0, totalDays: 0, count: 0 };
         }
@@ -255,18 +348,22 @@ export default function Reports() {
         const date = subDays(new Date(), 6 - i);
         const dateStr = format(date, 'yyyy-MM-dd');
         
+        const dayPayments = payments?.filter((p: any) => 
+          p.created_at?.startsWith(dateStr)
+        ) || [];
+        
         const dayOrders = orders?.filter((o: any) => 
           o.created_at?.startsWith(dateStr)
         ) || [];
-        
-        const dayParts = partsUsage?.filter((p: any) => 
-          dayOrders.some((o: any) => o.id === p.order_id)
-        ) || [];
+
+        const dayExpenses = dayOrders.reduce((sum: number, o: any) => {
+          return sum + (o.spare_parts_usage?.reduce((s: number, u: any) => s + u.quantity * u.unit_price, 0) || 0);
+        }, 0);
 
         return {
           name: dayName.charAt(0).toUpperCase() + dayName.slice(1),
-          ingresos: dayOrders.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0),
-          gastos: dayParts.reduce((sum: number, p: any) => sum + (Number(p.unit_price) * (p.quantity || 1)), 0),
+          ingresos: dayPayments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0),
+          gastos: dayExpenses,
         };
       });
 
@@ -278,6 +375,14 @@ export default function Reports() {
       setLoading(false);
     }
   }
+
+  const paymentMethodLabels: Record<string, string> = {
+    cash: 'Efectivo',
+    card: 'Tarjeta',
+    transfer: 'Transferencia',
+    mobile_payment: 'Pago Móvil',
+    other: 'Otro',
+  };
 
   if (loading) {
     return (
@@ -301,29 +406,70 @@ export default function Reports() {
               Métricas y estadísticas del taller
             </p>
           </div>
-          <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Hoy</SelectItem>
-              <SelectItem value="week">Esta Semana</SelectItem>
-              <SelectItem value="month">Este Mes</SelectItem>
-              <SelectItem value="year">Este Año</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap gap-2 items-center">
+            <Select value={period} onValueChange={setPeriod}>
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Hoy</SelectItem>
+                <SelectItem value="week">Esta Semana</SelectItem>
+                <SelectItem value="month">Este Mes</SelectItem>
+                <SelectItem value="year">Este Año</SelectItem>
+                <SelectItem value="custom">Personalizado</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            {period === 'custom' && (
+              <div className="flex gap-2 items-center">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Calendar className="w-4 h-4" />
+                      {customDateFrom ? format(customDateFrom, 'dd/MM/yy') : 'Desde'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={customDateFrom}
+                      onSelect={setCustomDateFrom}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <span className="text-muted-foreground">-</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Calendar className="w-4 h-4" />
+                      {customDateTo ? format(customDateTo, 'dd/MM/yy') : 'Hasta'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={customDateTo}
+                      onSelect={setCustomDateTo}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Financial Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5 mb-6 md:mb-8">
           <StatCard
-            title="Ingresos Brutos"
+            title="Ingresos Cobrados"
             value={`$${stats.totalRevenue.toLocaleString()}`}
             icon={DollarSign}
             iconClassName="bg-success/10 text-success"
           />
           <StatCard
-            title="Gastos Repuestos"
+            title="Costo Repuestos"
             value={`$${stats.totalCosts.toLocaleString()}`}
             icon={TrendingDown}
             iconClassName="bg-destructive/10 text-destructive"
@@ -342,8 +488,12 @@ export default function Reports() {
           />
         </div>
 
-        <Tabs defaultValue="financial" className="space-y-6">
+        <Tabs defaultValue="transactions" className="space-y-6">
           <TabsList className="w-full flex overflow-x-auto">
+            <TabsTrigger value="transactions" className="gap-2 flex-1">
+              <List className="w-4 h-4 hidden sm:block" />
+              Transacciones
+            </TabsTrigger>
             <TabsTrigger value="financial" className="gap-2 flex-1">
               <BarChart3 className="w-4 h-4 hidden sm:block" />
               Financiero
@@ -357,6 +507,190 @@ export default function Reports() {
               Estadísticas
             </TabsTrigger>
           </TabsList>
+
+          {/* Transactions Tab */}
+          <TabsContent value="transactions" className="space-y-6">
+            {/* Orders List */}
+            <Card className="glass-card">
+              <CardHeader 
+                className="cursor-pointer"
+                onClick={() => setExpandedSection(expandedSection === 'orders' ? null : 'orders')}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Wrench className="w-5 h-5 text-primary" />
+                    Órdenes del Período ({orderTransactions.length})
+                  </CardTitle>
+                  {expandedSection === 'orders' ? (
+                    <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </div>
+              </CardHeader>
+              {expandedSection === 'orders' && (
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Orden</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Cliente</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Equipo</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Estado</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Total</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Pagado</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Pendiente</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {orderTransactions.map((tx) => (
+                          <tr key={tx.id} className="hover:bg-muted/30">
+                            <td className="px-3 py-2 text-sm font-medium text-primary">{tx.order_number}</td>
+                            <td className="px-3 py-2 text-sm">{tx.customer_name}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground">{tx.device}</td>
+                            <td className="px-3 py-2">
+                              <StatusBadge status={tx.status} />
+                            </td>
+                            <td className="px-3 py-2 text-sm text-right font-medium">${tx.total.toFixed(2)}</td>
+                            <td className="px-3 py-2 text-sm text-right text-success">${tx.paid.toFixed(2)}</td>
+                            <td className={cn(
+                              "px-3 py-2 text-sm text-right font-medium",
+                              tx.pending > 0 ? "text-destructive" : "text-success"
+                            )}>
+                              ${tx.pending.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground">
+                              {format(new Date(tx.created_at), 'dd/MM/yy HH:mm')}
+                            </td>
+                          </tr>
+                        ))}
+                        {orderTransactions.length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                              No hay órdenes en este período
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot className="border-t-2 border-border">
+                        <tr className="font-semibold">
+                          <td colSpan={4} className="px-3 py-2 text-sm">Totales</td>
+                          <td className="px-3 py-2 text-sm text-right">
+                            ${orderTransactions.reduce((s, t) => s + t.total, 0).toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-right text-success">
+                            ${orderTransactions.reduce((s, t) => s + t.paid, 0).toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-right text-destructive">
+                            ${orderTransactions.reduce((s, t) => s + t.pending, 0).toFixed(2)}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* Payments List */}
+            <Card className="glass-card">
+              <CardHeader 
+                className="cursor-pointer"
+                onClick={() => setExpandedSection(expandedSection === 'payments' ? null : 'payments')}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-success" />
+                    Pagos Recibidos ({paymentTransactions.length})
+                  </CardTitle>
+                  {expandedSection === 'payments' ? (
+                    <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </div>
+              </CardHeader>
+              {expandedSection === 'payments' && (
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Orden</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Cliente</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Monto</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Método</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Notas</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {paymentTransactions.map((tx) => (
+                          <tr key={tx.id} className="hover:bg-muted/30">
+                            <td className="px-3 py-2 text-sm font-medium text-primary">{tx.order_number}</td>
+                            <td className="px-3 py-2 text-sm">{tx.customer_name}</td>
+                            <td className="px-3 py-2 text-sm text-right font-semibold text-success">
+                              ${tx.amount.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-sm">
+                              <span className="status-badge bg-secondary text-secondary-foreground text-xs px-2 py-0.5">
+                                {paymentMethodLabels[tx.payment_method] || tx.payment_method}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground max-w-32 truncate">
+                              {tx.notes || '-'}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground">
+                              {format(new Date(tx.created_at), 'dd/MM/yy HH:mm')}
+                            </td>
+                          </tr>
+                        ))}
+                        {paymentTransactions.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                              No hay pagos en este período
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot className="border-t-2 border-border">
+                        <tr className="font-semibold">
+                          <td colSpan={2} className="px-3 py-2 text-sm">Total Cobrado</td>
+                          <td className="px-3 py-2 text-sm text-right text-success">
+                            ${paymentTransactions.reduce((s, t) => s + t.amount, 0).toFixed(2)}
+                          </td>
+                          <td colSpan={3}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground">Total Órdenes</p>
+                <p className="text-2xl font-bold">{orderTransactions.length}</p>
+              </div>
+              <div className="p-4 bg-success/10 rounded-lg">
+                <p className="text-sm text-muted-foreground">Total Cobrado</p>
+                <p className="text-2xl font-bold text-success">
+                  ${paymentTransactions.reduce((s, t) => s + t.amount, 0).toFixed(2)}
+                </p>
+              </div>
+              <div className="p-4 bg-destructive/10 rounded-lg">
+                <p className="text-sm text-muted-foreground">Total Pendiente</p>
+                <p className="text-2xl font-bold text-destructive">
+                  ${orderTransactions.reduce((s, t) => s + t.pending, 0).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </TabsContent>
 
           {/* Financial Tab */}
           <TabsContent value="financial" className="space-y-6">
@@ -426,14 +760,14 @@ export default function Reports() {
                   <CardTitle>Rendimiento por Técnico</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {technicianStats.map((tech) => (
-                      <div key={tech.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-muted/50 rounded-lg gap-4">
+                      <div key={tech.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-muted/50 rounded-lg gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <Wrench className="w-5 h-5 text-primary" />
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Wrench className="w-4 h-4 text-primary" />
                           </div>
-                          <span className="font-medium">{tech.name}</span>
+                          <span className="font-medium text-sm">{tech.name}</span>
                         </div>
                         <div className="flex items-center gap-6 sm:gap-8 w-full sm:w-auto justify-between sm:justify-end">
                           <div className="text-center">
