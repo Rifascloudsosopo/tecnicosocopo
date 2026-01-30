@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, User, Smartphone, FileText, DollarSign, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, Search, User, Smartphone, FileText, DollarSign, Loader2, Check, Plus, Trash2, Package, Wrench } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +23,25 @@ interface Customer {
   cedula: string;
   name: string;
   phone: string;
+}
+
+interface SparePart {
+  id: string;
+  name: string;
+  sale_price: number;
+  stock: number;
+}
+
+interface SelectedPart {
+  partId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+interface AdditionalCost {
+  description: string;
+  amount: number;
 }
 
 export default function NewServiceOrder() {
@@ -57,13 +76,38 @@ export default function NewServiceOrder() {
     aesthetic: '',
   });
 
-  // Budget
+  // Budget and costs
   const [budget, setBudget] = useState({
-    initial: '',
     advance: '',
     warrantyDays: '30',
+    totalToCharge: '', // This is the final amount to charge the customer
   });
 
+  // Spare parts
+  const [availableParts, setAvailableParts] = useState<SparePart[]>([]);
+  const [selectedParts, setSelectedParts] = useState<SelectedPart[]>([]);
+  const [selectedPartId, setSelectedPartId] = useState('');
+  const [partQuantity, setPartQuantity] = useState('1');
+
+  // Additional costs
+  const [additionalCosts, setAdditionalCosts] = useState<AdditionalCost[]>([]);
+  const [costDescription, setCostDescription] = useState('');
+  const [costAmount, setCostAmount] = useState('');
+
+  // Load spare parts on mount
+  useEffect(() => {
+    loadSpareParts();
+  }, []);
+
+  async function loadSpareParts() {
+    const { data } = await supabase
+      .from('spare_parts')
+      .select('id, name, sale_price, stock')
+      .gt('stock', 0)
+      .order('name');
+    
+    setAvailableParts(data || []);
+  }
 
   async function handleCedulaSearch() {
     if (!cedulaSearch.trim()) return;
@@ -95,6 +139,72 @@ export default function NewServiceOrder() {
     } finally {
       setSearchingCustomer(false);
     }
+  }
+
+  // Calculate totals
+  const partsTotal = selectedParts.reduce((sum, p) => sum + p.quantity * p.unitPrice, 0);
+  const costsTotal = additionalCosts.reduce((sum, c) => sum + c.amount, 0);
+  const subtotal = partsTotal + costsTotal;
+  const totalToCharge = parseFloat(budget.totalToCharge) || 0;
+  const laborAmount = Math.max(0, totalToCharge - subtotal);
+
+  function handleAddPart() {
+    if (!selectedPartId) return;
+    
+    const part = availableParts.find(p => p.id === selectedPartId);
+    if (!part) return;
+
+    const qty = parseInt(partQuantity) || 1;
+    if (qty <= 0) return;
+
+    // Check if already added
+    const existing = selectedParts.find(p => p.partId === selectedPartId);
+    if (existing) {
+      const newQty = existing.quantity + qty;
+      if (newQty > part.stock) {
+        toast({ title: `Solo hay ${part.stock} unidades disponibles`, variant: 'destructive' });
+        return;
+      }
+      setSelectedParts(selectedParts.map(p => 
+        p.partId === selectedPartId ? { ...p, quantity: newQty } : p
+      ));
+    } else {
+      if (qty > part.stock) {
+        toast({ title: `Solo hay ${part.stock} unidades disponibles`, variant: 'destructive' });
+        return;
+      }
+      setSelectedParts([...selectedParts, {
+        partId: part.id,
+        name: part.name,
+        quantity: qty,
+        unitPrice: part.sale_price,
+      }]);
+    }
+
+    setSelectedPartId('');
+    setPartQuantity('1');
+  }
+
+  function handleRemovePart(partId: string) {
+    setSelectedParts(selectedParts.filter(p => p.partId !== partId));
+  }
+
+  function handleAddCost() {
+    if (!costDescription.trim() || !costAmount) return;
+    
+    const amount = parseFloat(costAmount);
+    if (isNaN(amount) || amount <= 0) return;
+
+    setAdditionalCosts([...additionalCosts, {
+      description: costDescription.trim(),
+      amount,
+    }]);
+    setCostDescription('');
+    setCostAmount('');
+  }
+
+  function handleRemoveCost(index: number) {
+    setAdditionalCosts(additionalCosts.filter((_, i) => i !== index));
   }
 
   async function handleCreateOrder() {
@@ -136,10 +246,10 @@ export default function NewServiceOrder() {
         customerId = newCust.id;
       }
 
-      // Create order - auto-assign current technician if logged in as one
-      const initialBudget = parseFloat(budget.initial) || 0;
+      // Calculate labor if total > subtotal
       const advancePayment = parseFloat(budget.advance) || 0;
 
+      // Create order
       const { data: order, error: orderError } = await (supabase
         .from('service_orders') as any)
         .insert({
@@ -154,7 +264,7 @@ export default function NewServiceOrder() {
           account_password: deviceData.accountPassword.trim() || null,
           reported_issue: diagnosis.issue.trim(),
           aesthetic_notes: diagnosis.aesthetic.trim() || null,
-          initial_budget: initialBudget,
+          initial_budget: 0, // We'll use labor as additional cost instead
           total_paid: advancePayment,
           warranty_days: parseInt(budget.warrantyDays),
           status: 'pending',
@@ -163,6 +273,43 @@ export default function NewServiceOrder() {
         .single();
 
       if (orderError) throw orderError;
+
+      // Add spare parts usage and update stock
+      for (const part of selectedParts) {
+        await supabase.from('spare_parts_usage').insert({
+          order_id: order.id,
+          spare_part_id: part.partId,
+          quantity: part.quantity,
+          unit_price: part.unitPrice,
+        });
+
+        // Decrease stock
+        const availPart = availableParts.find(p => p.id === part.partId);
+        if (availPart) {
+          await supabase
+            .from('spare_parts')
+            .update({ stock: availPart.stock - part.quantity })
+            .eq('id', part.partId);
+        }
+      }
+
+      // Add additional costs
+      for (const cost of additionalCosts) {
+        await supabase.from('order_additional_costs').insert({
+          order_id: order.id,
+          description: cost.description,
+          amount: cost.amount,
+        });
+      }
+
+      // Add labor as additional cost if there's a difference
+      if (laborAmount > 0) {
+        await supabase.from('order_additional_costs').insert({
+          order_id: order.id,
+          description: 'Mano de obra',
+          amount: laborAmount,
+        });
+      }
 
       // Create initial payment if advance > 0
       if (advancePayment > 0) {
@@ -214,7 +361,7 @@ export default function NewServiceOrder() {
             { num: 1, label: 'Cliente', icon: User },
             { num: 2, label: 'Equipo', icon: Smartphone },
             { num: 3, label: 'Diagnóstico', icon: FileText },
-            { num: 4, label: 'Presupuesto', icon: DollarSign },
+            { num: 4, label: 'Costos', icon: DollarSign },
           ].map((s, idx) => (
             <div key={s.num} className="flex items-center">
               <div
@@ -493,87 +640,262 @@ export default function NewServiceOrder() {
           </Card>
         )}
 
-        {/* Step 4: Presupuesto */}
+        {/* Step 4: Costos y Total */}
         {step === 4 && (
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="w-5 h-5 text-primary" />
-                Presupuesto Inicial
+                Repuestos, Costos y Total
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="budget">Monto Inicial ($) *</Label>
-                  <Input
-                    id="budget"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={budget.initial}
-                    onChange={(e) => setBudget({ ...budget, initial: e.target.value })}
-                    className="mt-1.5 text-lg font-semibold"
-                  />
+              {/* Spare Parts Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold">Repuestos</h3>
+                  <span className="text-xs text-muted-foreground">(opcional)</span>
                 </div>
-                <div>
-                  <Label htmlFor="advance">Abono Inicial ($)</Label>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Select value={selectedPartId} onValueChange={setSelectedPartId}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Seleccionar repuesto..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableParts.map((part) => (
+                        <SelectItem key={part.id} value={part.id}>
+                          {part.name} - ${part.sale_price} (Stock: {part.stock})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Input
-                    id="advance"
                     type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={budget.advance}
-                    onChange={(e) => setBudget({ ...budget, advance: e.target.value })}
-                    className="mt-1.5"
+                    min="1"
+                    placeholder="Cant."
+                    value={partQuantity}
+                    onChange={(e) => setPartQuantity(e.target.value)}
+                    className="w-20"
                   />
+                  <Button onClick={handleAddPart} disabled={!selectedPartId} type="button">
+                    <Plus className="w-4 h-4" />
+                  </Button>
                 </div>
+
+                {selectedParts.length > 0 && (
+                  <div className="border rounded-lg divide-y">
+                    {selectedParts.map((part) => (
+                      <div key={part.partId} className="p-3 flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{part.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {part.quantity} x ${part.unitPrice.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-semibold text-success">
+                            ${(part.quantity * part.unitPrice).toFixed(2)}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => handleRemovePart(part.partId)}
+                            type="button"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="p-3 flex justify-end text-sm">
+                      <span className="text-muted-foreground mr-2">Subtotal repuestos:</span>
+                      <span className="font-semibold">${partsTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <Label htmlFor="warranty">Días de Garantía</Label>
-                <Select
-                  value={budget.warrantyDays}
-                  onValueChange={(v) => setBudget({ ...budget, warrantyDays: v })}
-                >
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="7">7 días</SelectItem>
-                    <SelectItem value="15">15 días</SelectItem>
-                    <SelectItem value="30">30 días</SelectItem>
-                    <SelectItem value="60">60 días</SelectItem>
-                    <SelectItem value="90">90 días</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Additional Costs Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Wrench className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold">Costos Adicionales</h3>
+                  <span className="text-xs text-muted-foreground">(diagnóstico, etc.)</span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    placeholder="Descripción (ej: Diagnóstico)"
+                    value={costDescription}
+                    onChange={(e) => setCostDescription(e.target.value)}
+                    className="flex-1"
+                  />
+                  <div className="flex gap-2">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={costAmount}
+                        onChange={(e) => setCostAmount(e.target.value)}
+                        className="pl-7 w-28"
+                      />
+                    </div>
+                    <Button onClick={handleAddCost} disabled={!costDescription.trim() || !costAmount} type="button">
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {additionalCosts.length > 0 && (
+                  <div className="border rounded-lg divide-y">
+                    {additionalCosts.map((cost, idx) => (
+                      <div key={idx} className="p-3 flex items-center justify-between gap-2">
+                        <span className="font-medium truncate flex-1">{cost.description}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-semibold text-success">${cost.amount.toFixed(2)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => handleRemoveCost(idx)}
+                            type="button"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="p-3 flex justify-end text-sm">
+                      <span className="text-muted-foreground mr-2">Subtotal extras:</span>
+                      <span className="font-semibold">${costsTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="p-4 bg-muted rounded-lg">
-                <h4 className="font-medium mb-2">Resumen de la Orden</h4>
-                <div className="space-y-1 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">Cliente:</span>{' '}
-                    {selectedCustomer?.name || newCustomer.name}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Equipo:</span>{' '}
-                    {deviceData.brand} {deviceData.model}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Falla:</span>{' '}
-                    {diagnosis.issue.substring(0, 50)}...
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Presupuesto:</span>{' '}
-                    ${parseFloat(budget.initial || '0').toFixed(2)}
-                  </p>
-                  {budget.advance && parseFloat(budget.advance) > 0 && (
-                    <p>
-                      <span className="text-muted-foreground">Abono:</span>{' '}
-                      ${parseFloat(budget.advance).toFixed(2)}
+              {/* Total and Labor Calculation */}
+              <div className="border-t pt-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="totalToCharge">Monto Total a Cobrar ($)</Label>
+                    <p className="text-xs text-muted-foreground mb-1.5">
+                      Déjalo vacío para revisión gratis
                     </p>
+                    <Input
+                      id="totalToCharge"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={budget.totalToCharge}
+                      onChange={(e) => setBudget({ ...budget, totalToCharge: e.target.value })}
+                      className="text-lg font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="advance">Abono Inicial ($)</Label>
+                    <p className="text-xs text-muted-foreground mb-1.5">
+                      Pago anticipado del cliente
+                    </p>
+                    <Input
+                      id="advance"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={budget.advance}
+                      onChange={(e) => setBudget({ ...budget, advance: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="warranty">Días de Garantía</Label>
+                  <Select
+                    value={budget.warrantyDays}
+                    onValueChange={(v) => setBudget({ ...budget, warrantyDays: v })}
+                  >
+                    <SelectTrigger className="mt-1.5">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Sin garantía</SelectItem>
+                      <SelectItem value="7">7 días</SelectItem>
+                      <SelectItem value="15">15 días</SelectItem>
+                      <SelectItem value="30">30 días</SelectItem>
+                      <SelectItem value="60">60 días</SelectItem>
+                      <SelectItem value="90">90 días</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Summary */}
+                <div className="p-4 bg-muted rounded-lg space-y-2">
+                  <h4 className="font-medium mb-3">Resumen de Costos</h4>
+                  
+                  {partsTotal > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Repuestos:</span>
+                      <span>${partsTotal.toFixed(2)}</span>
+                    </div>
                   )}
+                  
+                  {costsTotal > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Costos adicionales:</span>
+                      <span>${costsTotal.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  {laborAmount > 0 && (
+                    <div className="flex justify-between text-sm text-primary">
+                      <span>Mano de obra (calculado):</span>
+                      <span className="font-medium">${laborAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-sm pt-2 border-t font-semibold">
+                    <span>Total:</span>
+                    <span className="text-lg">${totalToCharge.toFixed(2)}</span>
+                  </div>
+
+                  {parseFloat(budget.advance) > 0 && (
+                    <div className="flex justify-between text-sm text-success">
+                      <span>Abono inicial:</span>
+                      <span>-${parseFloat(budget.advance).toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  {totalToCharge > 0 && (
+                    <div className="flex justify-between text-sm text-warning">
+                      <span>Pendiente por cobrar:</span>
+                      <span className="font-medium">
+                        ${Math.max(0, totalToCharge - (parseFloat(budget.advance) || 0)).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Order Summary */}
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium mb-2">Datos de la Orden</h4>
+                  <div className="space-y-1 text-sm">
+                    <p>
+                      <span className="text-muted-foreground">Cliente:</span>{' '}
+                      {selectedCustomer?.name || newCustomer.name}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Equipo:</span>{' '}
+                      {deviceData.brand} {deviceData.model}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Falla:</span>{' '}
+                      {diagnosis.issue.substring(0, 50)}{diagnosis.issue.length > 50 ? '...' : ''}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -581,7 +903,7 @@ export default function NewServiceOrder() {
                 <Button variant="outline" onClick={() => setStep(3)}>
                   Atrás
                 </Button>
-                <Button onClick={handleCreateOrder} disabled={saving || !budget.initial}>
+                <Button onClick={handleCreateOrder} disabled={saving}>
                   {saving ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
