@@ -417,15 +417,14 @@ export default function NewServiceOrder() {
               <div className="flex gap-3">
                 <div className="flex-1">
                   <Label htmlFor="cedula">Cédula del Cliente</Label>
-                  <div className="relative mt-1.5">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <div className="mt-1.5">
                     <Input
                       id="cedula"
                       placeholder="V-12345678"
                       value={cedulaSearch}
                       onChange={(e) => setCedulaSearch(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleCedulaSearch()}
-                      className="input-search"
+                      className="bg-background border-border focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                     />
                   </div>
                 </div>

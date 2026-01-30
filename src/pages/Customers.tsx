@@ -321,13 +321,12 @@ export default function Customers() {
 
         {/* Search */}
         <div className="glass-card rounded-xl p-4 mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <div className="max-w-md">
             <Input
               placeholder="Buscar por cédula, nombre o teléfono..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="input-search"
+              className="bg-background border-border focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
             />
           </div>
         </div>
