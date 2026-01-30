@@ -1,5 +1,20 @@
 import type { CompanySettings } from '@/hooks/useCompanySettings';
 
+interface SparePartUsage {
+  id: string;
+  quantity: number;
+  unit_price: number;
+  spare_parts: {
+    name: string;
+  } | null;
+}
+
+interface AdditionalCost {
+  id: string;
+  description: string;
+  amount: number;
+}
+
 interface OrderData {
   order_number: string;
   device_brand: string;
@@ -20,6 +35,8 @@ interface OrderData {
   technicians?: {
     name: string;
   } | null;
+  spare_parts_usage?: SparePartUsage[];
+  order_additional_costs?: AdditionalCost[];
 }
 
 type PrinterSize = '58mm' | '80mm' | '110mm';
@@ -45,7 +62,12 @@ export function printTicket(
   const termsConditions = settings?.terms_conditions || '';
   const warrantyDays = order.warranty_days || settings?.default_warranty_days || 30;
 
-  const pendingAmount = order.initial_budget - order.total_paid;
+  // Calculate real totals from spare parts and additional costs
+  const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+  const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+  const orderTotal = order.initial_budget + partsTotal + costsTotal;
+  const pendingAmount = orderTotal - order.total_paid;
+
   const createdDate = new Date(order.created_at).toLocaleString('es-ES', {
     dateStyle: 'short',
     timeStyle: 'short',
@@ -102,9 +124,9 @@ export function printTicket(
       <div class="divider"></div>
       
       <div class="section">
-        <p class="label">PRESUPUESTO:</p>
-        <p class="value price">$${order.initial_budget.toFixed(2)}</p>
-        <p class="small">Abono: $${order.total_paid.toFixed(2)}</p>
+        <p class="label">TOTAL:</p>
+        <p class="value price">$${orderTotal.toFixed(2)}</p>
+        <p class="small">Pagado: $${order.total_paid.toFixed(2)}</p>
         <p class="small">Pendiente: $${pendingAmount.toFixed(2)}</p>
       </div>
       
@@ -164,8 +186,8 @@ export function printTicket(
       
       <div class="section">
         <p class="label">TOTAL:</p>
-        <p class="value price">$${order.initial_budget.toFixed(2)}</p>
-        <p class="small">Pagado: $${order.initial_budget.toFixed(2)}</p>
+        <p class="value price">$${orderTotal.toFixed(2)}</p>
+        <p class="small">Pagado: $${orderTotal.toFixed(2)}</p>
       </div>
       
       <div class="divider"></div>
