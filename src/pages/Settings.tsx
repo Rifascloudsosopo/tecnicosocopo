@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Building2, Save, Upload, Download, UploadCloud, Loader2, AlertTriangle, Link2, Printer } from 'lucide-react';
+import { Building2, Save, Upload, Download, UploadCloud, Loader2, AlertTriangle, Link2, Printer, Trash2, Calendar } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +40,14 @@ export default function Settings() {
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [pendingBackup, setPendingBackup] = useState<BackupData | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  
+  // Delete orders state
+  const [deleteBeforeDate, setDeleteBeforeDate] = useState('');
+  const [ordersToDelete, setOrdersToDelete] = useState<number>(0);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isCountingOrders, setIsCountingOrders] = useState(false);
 
   // Local form state
   const [formData, setFormData] = useState({
@@ -249,6 +257,99 @@ export default function Settings() {
     }
   }
 
+  async function handleCountOrdersToDelete() {
+    if (!deleteBeforeDate) {
+      toast({
+        title: 'Selecciona una fecha',
+        description: 'Debes seleccionar una fecha límite para buscar órdenes.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsCountingOrders(true);
+    try {
+      const { count, error } = await supabase
+        .from('service_orders')
+        .select('id', { count: 'exact', head: true })
+        .lt('created_at', deleteBeforeDate);
+
+      if (error) throw error;
+
+      setOrdersToDelete(count || 0);
+      
+      if (count === 0) {
+        toast({
+          title: 'Sin órdenes',
+          description: 'No hay órdenes anteriores a la fecha seleccionada.',
+        });
+      } else {
+        setShowDeleteDialog(true);
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error al contar órdenes',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCountingOrders(false);
+    }
+  }
+
+  async function handleDeleteOrders() {
+    if (deleteConfirmText.toLowerCase() !== 'borrar') {
+      toast({
+        title: 'Confirmación incorrecta',
+        description: 'Debes escribir "borrar" para confirmar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      // First delete related records (due to foreign keys)
+      const { data: orderIds } = await supabase
+        .from('service_orders')
+        .select('id')
+        .lt('created_at', deleteBeforeDate);
+
+      if (orderIds && orderIds.length > 0) {
+        const ids = orderIds.map(o => o.id);
+        
+        // Delete related records in order
+        await supabase.from('spare_parts_usage').delete().in('order_id', ids);
+        await supabase.from('order_additional_costs').delete().in('order_id', ids);
+        await supabase.from('order_payments').delete().in('order_id', ids);
+        
+        // Finally delete the orders
+        const { error } = await supabase
+          .from('service_orders')
+          .delete()
+          .in('id', ids);
+
+        if (error) throw error;
+
+        toast({
+          title: 'Órdenes eliminadas',
+          description: `Se eliminaron ${ids.length} órdenes exitosamente.`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error al eliminar',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+      setDeleteConfirmText('');
+      setOrdersToDelete(0);
+    }
+  }
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -271,12 +372,13 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="company" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-6">
             <TabsTrigger value="company">Empresa</TabsTrigger>
             <TabsTrigger value="service">Servicio</TabsTrigger>
             <TabsTrigger value="printer">Impresora</TabsTrigger>
             <TabsTrigger value="legal">Legal</TabsTrigger>
             <TabsTrigger value="backup">Respaldo</TabsTrigger>
+            <TabsTrigger value="maintenance">Mantenimiento</TabsTrigger>
           </TabsList>
 
           {/* Company Tab */}
@@ -642,6 +744,79 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Maintenance Tab */}
+          <TabsContent value="maintenance">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Trash2 className="w-5 h-5 text-destructive" />
+                  Mantenimiento de Datos
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Delete Old Orders */}
+                <div className="p-6 border border-destructive/30 rounded-lg bg-destructive/5">
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="p-3 rounded-xl bg-destructive/10">
+                      <Calendar className="w-6 h-6 text-destructive" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-destructive">Eliminar Órdenes Antiguas</h4>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Elimina permanentemente las órdenes de servicio anteriores a una fecha específica.
+                        Esta acción también eliminará los pagos, costos adicionales y repuestos asociados.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div className="flex-1 space-y-2">
+                        <Label htmlFor="deleteDate">Eliminar órdenes anteriores a:</Label>
+                        <Input
+                          id="deleteDate"
+                          type="date"
+                          value={deleteBeforeDate}
+                          onChange={(e) => setDeleteBeforeDate(e.target.value)}
+                          className="w-full sm:w-64"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <Button
+                          variant="destructive"
+                          onClick={handleCountOrdersToDelete}
+                          disabled={isCountingOrders || !deleteBeforeDate}
+                          className="gap-2"
+                        >
+                          {isCountingOrders ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                          Buscar y Eliminar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Warning */}
+                <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-destructive">¡Acción Irreversible!</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        La eliminación de órdenes es permanente y no se puede deshacer. 
+                        Se recomienda <strong>descargar un respaldo completo</strong> antes de eliminar datos.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -666,6 +841,65 @@ export default function Settings() {
             <AlertDialogAction onClick={handleConfirmRestore}>
               Restaurar
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Orders Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={(open) => {
+        setShowDeleteDialog(open);
+        if (!open) {
+          setDeleteConfirmText('');
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Confirmar Eliminación
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  Estás a punto de eliminar <strong className="text-destructive">{ordersToDelete} órdenes</strong> de servicio 
+                  anteriores al {new Date(deleteBeforeDate).toLocaleDateString('es-ES')}.
+                </p>
+                <p>
+                  Esta acción es <strong>permanente e irreversible</strong>. También se eliminarán todos los pagos, 
+                  costos adicionales y repuestos asociados a estas órdenes.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmDelete">
+                    Para confirmar, escribe <strong className="text-destructive">borrar</strong> a continuación:
+                  </Label>
+                  <Input
+                    id="confirmDelete"
+                    placeholder="Escribe 'borrar' para confirmar"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    className="border-destructive/50 focus-visible:ring-destructive"
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirmText('')}>
+              Cancelar
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteOrders}
+              disabled={isDeleting || deleteConfirmText.toLowerCase() !== 'borrar'}
+              className="gap-2"
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              Eliminar Órdenes
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
