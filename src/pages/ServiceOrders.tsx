@@ -537,8 +537,8 @@ export default function ServiceOrders() {
                             <p className="font-medium text-foreground text-sm">{order.device_brand}</p>
                             <p className="text-xs text-muted-foreground">{order.device_model}</p>
                           </td>
-                          <td className="px-3 py-2">
-                            <p className="text-xs text-foreground max-w-xs truncate">{order.reported_issue}</p>
+                          <td className="px-3 py-2 max-w-[120px]">
+                            <p className="text-xs text-foreground truncate" title={order.reported_issue}>{order.reported_issue}</p>
                           </td>
                           <td className="px-3 py-2">
                             {order.technicians?.name ? (
