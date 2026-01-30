@@ -28,49 +28,95 @@ export function useAuthState() {
   const [loading, setLoading] = useState(true);
   const [currentTechnicianId, setCurrentTechnicianId] = useState<string | null>(null);
 
+  function clearSupabaseAuthStorage() {
+    // If the stored session gets corrupted, supabase-js may throw while reading it.
+    // Clearing only Supabase keys prevents an infinite "loading" spinner.
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch {
+      // ignore (e.g., storage disabled)
+    }
+  }
+
+  async function loadTechnicianIdForUser(userId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('technicians')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching technician id:', error);
+        setCurrentTechnicianId(null);
+        return;
+      }
+
+      setCurrentTechnicianId(data?.id ?? null);
+    } catch (err) {
+      console.error('Unexpected error fetching technician id:', err);
+      setCurrentTechnicianId(null);
+    }
+  }
+
   useEffect(() => {
+    let mounted = true;
+
+    const safeSetLoading = (value: boolean) => {
+      if (mounted) setLoading(value);
+    };
+
+    const safeSetUserSession = (nextSession: Session | null) => {
+      if (!mounted) return;
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+    };
+
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
+        safeSetUserSession(session);
+        safeSetLoading(false);
+
         if (session?.user) {
-          // Fetch technician id for current user
-          const { data } = await supabase
-            .from('technicians')
-            .select('id')
-            .eq('user_id', session.user.id)
-            .maybeSingle();
-          setCurrentTechnicianId(data?.id ?? null);
+          // Don't block auth loading on this request
+          void loadTechnicianIdForUser(session.user.id);
         } else {
-          setCurrentTechnicianId(null);
+          if (mounted) setCurrentTechnicianId(null);
         }
-        
-        setLoading(false);
       }
     );
 
     // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        supabase
-          .from('technicians')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .maybeSingle()
-          .then(({ data }) => {
-            setCurrentTechnicianId(data?.id ?? null);
-          });
-      }
-      
-      setLoading(false);
-    });
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        safeSetUserSession(session);
+        safeSetLoading(false);
 
-    return () => subscription.unsubscribe();
+        if (session?.user) {
+          void loadTechnicianIdForUser(session.user.id);
+        } else {
+          if (mounted) setCurrentTechnicianId(null);
+        }
+      } catch (err) {
+        console.error('Error loading auth session:', err);
+        // Fix common case: corrupt stored session -> infinite spinner
+        clearSupabaseAuthStorage();
+        safeSetUserSession(null);
+        if (mounted) setCurrentTechnicianId(null);
+        safeSetLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
