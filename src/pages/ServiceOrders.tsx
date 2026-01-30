@@ -33,6 +33,21 @@ import { printTicket } from '@/lib/printTicket';
 import { StatusChangeDialog } from '@/components/orders/StatusChangeDialog';
 import { OrderCostsManager } from '@/components/orders/OrderCostsManager';
 
+interface SparePartUsage {
+  id: string;
+  quantity: number;
+  unit_price: number;
+  spare_parts: {
+    name: string;
+  } | null;
+}
+
+interface AdditionalCost {
+  id: string;
+  description: string;
+  amount: number;
+}
+
 interface ServiceOrder {
   id: string;
   order_number: string;
@@ -50,7 +65,10 @@ interface ServiceOrder {
   status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'abandoned';
   initial_budget: number;
   total_paid: number;
+  additional_costs: number | null;
   warranty_days: number | null;
+  delivered_at: string | null;
+  warranty_expires_at: string | null;
   created_at: string;
   customers: {
     name: string;
@@ -60,6 +78,8 @@ interface ServiceOrder {
   technicians: {
     name: string;
   } | null;
+  spare_parts_usage: SparePartUsage[];
+  order_additional_costs: AdditionalCost[];
 }
 
 export default function ServiceOrders() {
@@ -93,7 +113,9 @@ export default function ServiceOrders() {
         .select(`
           *,
           customers (name, phone, cedula),
-          technicians (name)
+          technicians (name),
+          spare_parts_usage (id, quantity, unit_price, spare_parts(name)),
+          order_additional_costs (id, description, amount)
         `)
         .order('created_at', { ascending: false });
 
@@ -304,7 +326,7 @@ export default function ServiceOrders() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handlePrint(order, 'entry')}
+                onClick={() => handlePrint(order, order.status === 'delivered' ? 'delivery' : 'entry')}
               >
                 <Printer className="w-4 h-4" />
               </Button>
@@ -482,8 +504,8 @@ export default function ServiceOrders() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                title="Imprimir"
-                                onClick={() => handlePrint(order, 'entry')}
+                                title={order.status === 'delivered' ? 'Imprimir Entrega' : 'Imprimir Entrada'}
+                                onClick={() => handlePrint(order, order.status === 'delivered' ? 'delivery' : 'entry')}
                               >
                                 <Printer className="w-4 h-4" />
                               </Button>
@@ -571,6 +593,38 @@ export default function ServiceOrders() {
                 )}
               </div>
 
+              {/* Spare Parts Used */}
+              {selectedOrder.spare_parts_usage && selectedOrder.spare_parts_usage.length > 0 && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium mb-2">Repuestos Utilizados</h4>
+                  <div className="space-y-1">
+                    {selectedOrder.spare_parts_usage.map((usage) => (
+                      <div key={usage.id} className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          {usage.spare_parts?.name} x{usage.quantity}
+                        </span>
+                        <span className="font-medium">${(usage.quantity * usage.unit_price).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Costs */}
+              {selectedOrder.order_additional_costs && selectedOrder.order_additional_costs.length > 0 && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium mb-2">Costos Adicionales</h4>
+                  <div className="space-y-1">
+                    {selectedOrder.order_additional_costs.map((cost) => (
+                      <div key={cost.id} className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{cost.description}</span>
+                        <span className="font-medium">${cost.amount.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Financials */}
               <div className="p-4 bg-muted/50 rounded-lg">
                 <h4 className="font-medium mb-2">Información Financiera</h4>
@@ -578,6 +632,20 @@ export default function ServiceOrders() {
                   <span className="text-muted-foreground">Presupuesto:</span>
                   <span className="font-medium">${selectedOrder.initial_budget}</span>
                 </div>
+                {(() => {
+                  const partsTotal = selectedOrder.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                  const costsTotal = selectedOrder.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                  const grandTotal = partsTotal + costsTotal;
+                  if (grandTotal > 0) {
+                    return (
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-muted-foreground">Repuestos + Extras:</span>
+                        <span className="font-medium">${grandTotal.toFixed(2)}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 <div className="flex justify-between text-sm mt-1">
                   <span className="text-muted-foreground">Pagado:</span>
                   <span className="font-medium text-success">${selectedOrder.total_paid}</span>
@@ -589,6 +657,51 @@ export default function ServiceOrders() {
                   </span>
                 </div>
               </div>
+
+              {/* Warranty Info */}
+              {selectedOrder.status === 'delivered' && selectedOrder.warranty_expires_at && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium mb-2">Garantía</h4>
+                  {(() => {
+                    const expiresAt = new Date(selectedOrder.warranty_expires_at);
+                    const now = new Date();
+                    const diffTime = expiresAt.getTime() - now.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    const isExpired = diffDays < 0;
+                    
+                    return (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Días de garantía:</span>
+                          <span className="font-medium">{selectedOrder.warranty_days || 30} días</span>
+                        </div>
+                        <div className="flex justify-between text-sm mt-1">
+                          <span className="text-muted-foreground">Entregado:</span>
+                          <span className="font-medium">
+                            {selectedOrder.delivered_at 
+                              ? new Date(selectedOrder.delivered_at).toLocaleDateString('es-ES') 
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm mt-1">
+                          <span className="text-muted-foreground">Vence:</span>
+                          <span className="font-medium">
+                            {expiresAt.toLocaleDateString('es-ES')}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm mt-1">
+                          <span className="text-muted-foreground">Estado:</span>
+                          {isExpired ? (
+                            <span className="font-medium text-destructive">Vencida</span>
+                          ) : (
+                            <span className="font-medium text-success">{diffDays} días restantes</span>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-2">
