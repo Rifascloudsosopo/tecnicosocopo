@@ -62,6 +62,12 @@ interface Category {
   created_at: string;
 }
 
+interface DeleteCategoryState {
+  category: Category | null;
+  productsCount: number;
+  newCategory: string;
+}
+
 type SortField = 'name' | 'sale_price' | 'purchase_price' | 'created_at' | 'stock';
 type SortDirection = 'asc' | 'desc';
 
@@ -82,6 +88,11 @@ export default function Inventory() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [deleteCategoryState, setDeleteCategoryState] = useState<DeleteCategoryState>({
+    category: null,
+    productsCount: 0,
+    newCategory: '',
+  });
   
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -230,6 +241,76 @@ export default function Inventory() {
     } catch (error: any) {
       toast({
         title: 'Error al crear categoría',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteCategory(category: Category) {
+    if (!canManageInventory) {
+      toast({
+        title: 'Sin permisos',
+        description: 'No tienes permisos para eliminar categorías',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Count products in this category
+    const productsInCategory = parts.filter(p => p.category === category.name);
+    
+    if (productsInCategory.length > 0) {
+      // Show dialog to reassign products
+      setDeleteCategoryState({
+        category,
+        productsCount: productsInCategory.length,
+        newCategory: '',
+      });
+    } else {
+      // Delete directly
+      await confirmDeleteCategory(category.id);
+    }
+  }
+
+  async function confirmDeleteCategory(categoryId: string, newCategoryName?: string) {
+    setSaving(true);
+    try {
+      const categoryToDelete = deleteCategoryState.category || categories.find(c => c.id === categoryId);
+      
+      if (newCategoryName && categoryToDelete) {
+        // Update all products to new category
+        const { error: updateError } = await supabase
+          .from('spare_parts')
+          .update({ category: newCategoryName })
+          .eq('category', categoryToDelete.name);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        setParts(parts.map(p => 
+          p.category === categoryToDelete.name 
+            ? { ...p, category: newCategoryName } 
+            : p
+        ));
+      }
+
+      // Delete category
+      const { error } = await supabase
+        .from('inventory_categories')
+        .delete()
+        .eq('id', categoryId);
+
+      if (error) throw error;
+
+      setCategories(categories.filter(c => c.id !== categoryId));
+      setDeleteCategoryState({ category: null, productsCount: 0, newCategory: '' });
+      toast({ title: 'Categoría eliminada' });
+    } catch (error: any) {
+      toast({
+        title: 'Error al eliminar categoría',
         description: error.message,
         variant: 'destructive',
       });
@@ -532,14 +613,34 @@ export default function Inventory() {
                         {categories.length === 0 ? (
                           <p className="p-4 text-center text-muted-foreground text-sm">No hay categorías</p>
                         ) : (
-                          categories.map((cat) => (
-                            <div key={cat.id} className="p-3 flex items-center justify-between">
-                              <span className="font-medium">{cat.name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(cat.created_at), 'dd/MM/yyyy', { locale: es })}
-                              </span>
-                            </div>
-                          ))
+                          categories.map((cat) => {
+                            const productCount = parts.filter(p => p.category === cat.name).length;
+                            return (
+                              <div key={cat.id} className="p-3 flex items-center justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-medium">{cat.name}</span>
+                                  {productCount > 0 && (
+                                    <span className="text-xs text-muted-foreground ml-2">
+                                      ({productCount} productos)
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground hidden sm:block">
+                                    {format(new Date(cat.created_at), 'dd/MM/yyyy', { locale: es })}
+                                  </span>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteCategory(cat)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>
@@ -945,6 +1046,63 @@ export default function Inventory() {
             )}
           </>
         )}
+
+        {/* Delete Category Confirmation Dialog */}
+        <Dialog 
+          open={!!deleteCategoryState.category} 
+          onOpenChange={(open) => !open && setDeleteCategoryState({ category: null, productsCount: 0, newCategory: '' })}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-warning" />
+                Eliminar Categoría
+              </DialogTitle>
+              <DialogDescription>
+                La categoría "{deleteCategoryState.category?.name}" tiene {deleteCategoryState.productsCount} producto(s) asociado(s).
+                Selecciona una nueva categoría para estos productos antes de eliminar.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Nueva categoría para los productos</Label>
+                <Select
+                  value={deleteCategoryState.newCategory}
+                  onValueChange={(v) => setDeleteCategoryState({ ...deleteCategoryState, newCategory: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories
+                      .filter(c => c.id !== deleteCategoryState.category?.id)
+                      .map((cat) => (
+                        <SelectItem key={cat.id} value={cat.name}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button 
+                variant="outline" 
+                onClick={() => setDeleteCategoryState({ category: null, productsCount: 0, newCategory: '' })}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={() => confirmDeleteCategory(deleteCategoryState.category!.id, deleteCategoryState.newCategory)}
+                disabled={!deleteCategoryState.newCategory || saving}
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Eliminar y Reasignar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

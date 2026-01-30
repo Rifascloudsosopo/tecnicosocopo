@@ -9,6 +9,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  DollarSign,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { useWhatsAppTemplates, openWhatsAppWithTemplate } from '@/hooks/useWhatsAppTemplates';
 import { printTicket } from '@/lib/printTicket';
 import { StatusChangeDialog } from '@/components/orders/StatusChangeDialog';
+import { OrderCostsManager } from '@/components/orders/OrderCostsManager';
 
 interface ServiceOrder {
   id: string;
@@ -67,6 +69,7 @@ export default function ServiceOrders() {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [costsDialogOrderId, setCostsDialogOrderId] = useState<string | null>(null);
   const [statusChangeDialog, setStatusChangeDialog] = useState<{
     open: boolean;
     orderId: string;
@@ -269,7 +272,7 @@ export default function ServiceOrders() {
               </SelectContent>
             </Select>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button
                 variant="outline"
                 size="sm"
@@ -279,15 +282,23 @@ export default function ServiceOrders() {
                 <Eye className="w-4 h-4 mr-1" />
                 Ver
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => setCostsDialogOrderId(order.id)}
+              >
+                <DollarSign className="w-4 h-4 mr-1" />
+                Costos
+              </Button>
               {order.customers?.phone && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 text-success border-success/30"
+                  className="text-success border-success/30"
                   onClick={() => handleWhatsApp(order)}
                 >
-                  <MessageCircle className="w-4 h-4 mr-1" />
-                  WhatsApp
+                  <MessageCircle className="w-4 h-4" />
                 </Button>
               )}
               <Button
@@ -446,6 +457,15 @@ export default function ServiceOrders() {
                                 onClick={() => setSelectedOrder(order)}
                               >
                                 <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                title="Repuestos y Costos"
+                                onClick={() => setCostsDialogOrderId(order.id)}
+                              >
+                                <DollarSign className="w-4 h-4" />
                               </Button>
                               {order.customers?.phone && (
                                 <Button
@@ -621,6 +641,16 @@ export default function ServiceOrders() {
         newStatus={statusChangeDialog.newStatus}
         onConfirm={confirmStatusChange}
       />
+
+      {/* Order Costs Manager Dialog */}
+      {costsDialogOrderId && (
+        <OrderCostsManager
+          orderId={costsDialogOrderId}
+          open={!!costsDialogOrderId}
+          onOpenChange={(open) => !open && setCostsDialogOrderId(null)}
+          onUpdate={loadOrders}
+        />
+      )}
     </MainLayout>
   );
 }
