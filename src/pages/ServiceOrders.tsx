@@ -493,12 +493,12 @@ export default function ServiceOrders() {
       </div>
 
       {/* Order Detail Dialog */}
-      <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
+      <Dialog open={!!selectedOrder} onOpenChange={(open) => !open && setSelectedOrder(null)}>
         <DialogContent className="sm:max-w-lg mx-4 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Orden {selectedOrder?.order_number}</span>
-              <StatusBadge status={selectedOrder?.status as any} />
+              {selectedOrder?.status && <StatusBadge status={selectedOrder.status} />}
             </DialogTitle>
           </DialogHeader>
           

@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { cn } from '@/lib/utils';
 
 type Status = 'pending' | 'in_progress' | 'completed' | 'delivered' | 'abandoned';
@@ -11,16 +12,23 @@ const statusConfig: Record<Status, { label: string; className: string }> = {
 };
 
 interface StatusBadgeProps {
-  status: Status;
+  status?: Status | null;
   className?: string;
 }
 
-export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const config = statusConfig[status];
-  
-  return (
-    <span className={cn('status-badge', config.className, className)}>
-      {config.label}
-    </span>
-  );
-}
+export const StatusBadge = forwardRef<HTMLSpanElement, StatusBadgeProps>(
+  ({ status, className }, ref) => {
+    if (!status) return null;
+    
+    const config = statusConfig[status];
+    if (!config) return null;
+    
+    return (
+      <span ref={ref} className={cn('status-badge', config.className, className)}>
+        {config.label}
+      </span>
+    );
+  }
+);
+
+StatusBadge.displayName = 'StatusBadge';
