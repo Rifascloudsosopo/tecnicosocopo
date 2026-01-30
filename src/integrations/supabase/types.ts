@@ -396,6 +396,41 @@ export type Database = {
           },
         ]
       }
+      technician_permissions: {
+        Row: {
+          created_at: string
+          granted: boolean
+          id: string
+          permission: string
+          technician_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          permission: string
+          technician_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          permission?: string
+          technician_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "technician_permissions_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       technicians: {
         Row: {
           created_at: string
@@ -480,6 +515,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      initialize_technician_permissions: {
+        Args: { p_technician_id: string }
+        Returns: undefined
       }
     }
     Enums: {

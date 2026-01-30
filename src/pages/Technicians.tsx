@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Phone, Wrench, Edit, Trash2, CheckCircle, XCircle, Loader2, Link2 } from 'lucide-react';
+import { Plus, Phone, Wrench, Edit, Trash2, CheckCircle, XCircle, Loader2, Link2, Shield } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,10 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { PermissionsEditor } from '@/components/technicians/PermissionsEditor';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Technician {
   id: string;
@@ -42,10 +45,13 @@ export default function Technicians() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [selectedTechForPerms, setSelectedTechForPerms] = useState<Technician | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingTech, setEditingTech] = useState<Technician | null>(null);
   const { toast } = useToast();
+  const { isAdmin, can } = usePermissions();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -240,6 +246,13 @@ export default function Technicians() {
     (editingTech && editingTech.user_id === u.id)
   );
 
+  function openPermissionsDialog(tech: Technician) {
+    setSelectedTechForPerms(tech);
+    setPermissionsDialogOpen(true);
+  }
+
+  const canManage = isAdmin || can('manage_technicians');
+
   return (
     <MainLayout>
       <div className="animate-fade-in">
@@ -251,101 +264,125 @@ export default function Technicians() {
               Gestiona el equipo de reparaciones
             </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2" onClick={openCreateDialog}>
-                <Plus className="w-4 h-4" />
-                Nuevo Técnico
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingTech ? 'Editar Técnico' : 'Registrar Técnico'}
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nombre Completo *</Label>
-                  <Input
-                    id="name"
-                    placeholder="Carlos Ramírez"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Teléfono *</Label>
-                  <Input
-                    id="phone"
-                    placeholder="+58 412-1234567"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="specialty">Especialidad</Label>
-                  <Input
-                    id="specialty"
-                    placeholder="Pantallas, Placas, Software..."
-                    value={formData.specialty}
-                    onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="user_id" className="flex items-center gap-2">
-                    <Link2 className="w-4 h-4" />
-                    Vincular a Usuario (Opcional)
-                  </Label>
-                  <Select
-                    value={formData.user_id}
-                    onValueChange={(v) => setFormData({ ...formData, user_id: v === 'none' ? '' : v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin vincular" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin vincular</SelectItem>
-                      {availableUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.full_name || user.email || user.id.slice(0, 8)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Al vincular, este técnico podrá iniciar sesión y ver sus órdenes asignadas.
-                  </p>
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setIsDialogOpen(false);
-                      setEditingTech(null);
-                    }}
-                    disabled={saving}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button type="submit" className="flex-1" disabled={saving}>
-                    {saving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Guardando...
-                      </>
+          {canManage && (
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2" onClick={openCreateDialog}>
+                  <Plus className="w-4 h-4" />
+                  Nuevo Técnico
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingTech ? 'Editar Técnico' : 'Registrar Técnico'}
+                  </DialogTitle>
+                </DialogHeader>
+                <Tabs defaultValue="info" className="mt-4">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="info">Información</TabsTrigger>
+                    <TabsTrigger value="permissions" disabled={!editingTech?.user_id}>
+                      Permisos
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="info">
+                    <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Nombre Completo *</Label>
+                        <Input
+                          id="name"
+                          placeholder="Carlos Ramírez"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">Teléfono *</Label>
+                        <Input
+                          id="phone"
+                          placeholder="+58 412-1234567"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="specialty">Especialidad</Label>
+                        <Input
+                          id="specialty"
+                          placeholder="Pantallas, Placas, Software..."
+                          value={formData.specialty}
+                          onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="user_id" className="flex items-center gap-2">
+                          <Link2 className="w-4 h-4" />
+                          Vincular a Usuario (Opcional)
+                        </Label>
+                        <Select
+                          value={formData.user_id}
+                          onValueChange={(v) => setFormData({ ...formData, user_id: v === 'none' ? '' : v })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sin vincular" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sin vincular</SelectItem>
+                            {availableUsers.map((user) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.full_name || user.email || user.id.slice(0, 8)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Al vincular, este técnico podrá iniciar sesión. Los permisos se configuran en la pestaña "Permisos".
+                        </p>
+                      </div>
+                      <div className="flex gap-3 pt-4">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setIsDialogOpen(false);
+                            setEditingTech(null);
+                          }}
+                          disabled={saving}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button type="submit" className="flex-1" disabled={saving}>
+                          {saving ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Guardando...
+                            </>
+                          ) : (
+                            'Guardar'
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  </TabsContent>
+                  <TabsContent value="permissions">
+                    {editingTech?.user_id ? (
+                      <div className="mt-4">
+                        <PermissionsEditor technicianId={editingTech.id} />
+                      </div>
                     ) : (
-                      'Guardar'
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Shield className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                        <p>Primero vincula el técnico a un usuario para configurar sus permisos.</p>
+                      </div>
                     )}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+                  </TabsContent>
+                </Tabs>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
 
         {/* Stats */}
@@ -414,23 +451,37 @@ export default function Technicians() {
                   )}
 
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex-1 gap-1"
-                      onClick={() => openEditDialog(tech)}
-                    >
-                      <Edit className="w-4 h-4" />
-                      Editar
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => deleteTechnician(tech)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {canManage && (
+                      <>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1 gap-1"
+                          onClick={() => openEditDialog(tech)}
+                        >
+                          <Edit className="w-4 h-4" />
+                          Editar
+                        </Button>
+                        {tech.user_id && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => openPermissionsDialog(tech)}
+                          >
+                            <Shield className="w-4 h-4" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => deleteTechnician(tech)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -443,6 +494,21 @@ export default function Technicians() {
             )}
           </>
         )}
+
+        {/* Permissions Dialog */}
+        <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
+          <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Shield className="w-5 h-5" />
+                Permisos de {selectedTechForPerms?.name}
+              </DialogTitle>
+            </DialogHeader>
+            {selectedTechForPerms && (
+              <PermissionsEditor technicianId={selectedTechForPerms.id} />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

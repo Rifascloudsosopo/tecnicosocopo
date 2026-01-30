@@ -29,14 +29,14 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/clientes" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+            <Route path="/clientes" element={<ProtectedRoute requiredPermission="view_customers"><Customers /></ProtectedRoute>} />
             <Route path="/ordenes" element={<ProtectedRoute><ServiceOrders /></ProtectedRoute>} />
-            <Route path="/ordenes/nueva" element={<ProtectedRoute><NewServiceOrder /></ProtectedRoute>} />
-            <Route path="/tecnicos" element={<ProtectedRoute><Technicians /></ProtectedRoute>} />
-            <Route path="/inventario" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-            <Route path="/whatsapp" element={<ProtectedRoute><WhatsAppTemplates /></ProtectedRoute>} />
-            <Route path="/reportes" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-            <Route path="/configuracion" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/ordenes/nueva" element={<ProtectedRoute requiredPermission="create_orders"><NewServiceOrder /></ProtectedRoute>} />
+            <Route path="/tecnicos" element={<ProtectedRoute requiredPermission="manage_technicians"><Technicians /></ProtectedRoute>} />
+            <Route path="/inventario" element={<ProtectedRoute requiredPermission="view_inventory"><Inventory /></ProtectedRoute>} />
+            <Route path="/whatsapp" element={<ProtectedRoute requiredPermission="manage_whatsapp"><WhatsAppTemplates /></ProtectedRoute>} />
+            <Route path="/reportes" element={<ProtectedRoute requiredPermission="view_reports"><Reports /></ProtectedRoute>} />
+            <Route path="/configuracion" element={<ProtectedRoute requiredPermission="view_settings"><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
