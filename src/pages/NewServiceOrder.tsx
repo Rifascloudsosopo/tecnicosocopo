@@ -145,8 +145,11 @@ export default function NewServiceOrder() {
   const partsTotal = selectedParts.reduce((sum, p) => sum + p.quantity * p.unitPrice, 0);
   const costsTotal = additionalCosts.reduce((sum, c) => sum + c.amount, 0);
   const subtotal = partsTotal + costsTotal;
-  const totalToCharge = parseFloat(budget.totalToCharge) || 0;
-  const laborAmount = Math.max(0, totalToCharge - subtotal);
+  const hasExplicitTotal = budget.totalToCharge.trim() !== '';
+  const explicitTotal = parseFloat(budget.totalToCharge) || 0;
+  // If user specifies a total, use it; otherwise total = subtotal (parts + costs)
+  const totalToCharge = hasExplicitTotal ? explicitTotal : subtotal;
+  const laborAmount = hasExplicitTotal ? Math.max(0, explicitTotal - subtotal) : 0;
 
   function handleAddPart() {
     if (!selectedPartId) return;
@@ -226,11 +229,11 @@ export default function NewServiceOrder() {
       return;
     }
 
-    // Validate that total to charge is not less than costs
-    if (totalToCharge > 0 && totalToCharge < subtotal) {
+    // Validate only if user explicitly set a total that's less than costs
+    if (hasExplicitTotal && explicitTotal < subtotal) {
       toast({
         title: 'Error',
-        description: `El monto total ($${totalToCharge.toFixed(2)}) no puede ser menor que los repuestos y gastos ($${subtotal.toFixed(2)})`,
+        description: `El monto total ($${explicitTotal.toFixed(2)}) no puede ser menor que los repuestos y gastos ($${subtotal.toFixed(2)})`,
         variant: 'destructive',
       });
       return;
@@ -783,13 +786,13 @@ export default function NewServiceOrder() {
                   <div>
                     <Label htmlFor="totalToCharge">Monto Total a Cobrar ($)</Label>
                     <p className="text-xs text-muted-foreground mb-1.5">
-                      Déjalo vacío para revisión gratis
+                      Opcional - si está vacío se usa la suma de costos
                     </p>
                     <Input
                       id="totalToCharge"
                       type="number"
                       step="0.01"
-                      placeholder="0.00"
+                      placeholder={subtotal > 0 ? subtotal.toFixed(2) : "0.00"}
                       value={budget.totalToCharge}
                       onChange={(e) => setBudget({ ...budget, totalToCharge: e.target.value })}
                       className="text-lg font-semibold"
@@ -857,7 +860,7 @@ export default function NewServiceOrder() {
                   )}
 
                   <div className="flex justify-between text-sm pt-2 border-t font-semibold">
-                    <span>Total:</span>
+                    <span>Total{!hasExplicitTotal && subtotal > 0 ? ' (calculado)' : ''}:</span>
                     <span className="text-lg">${totalToCharge.toFixed(2)}</span>
                   </div>
 
