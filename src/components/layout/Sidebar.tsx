@@ -29,7 +29,7 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+  { icon: LayoutDashboard, label: 'Inicio', path: '/' },
   { icon: Users, label: 'Clientes', path: '/clientes', permission: 'view_customers' },
   { icon: ClipboardList, label: 'Órdenes', path: '/ordenes' },
   { icon: Wrench, label: 'Técnicos', path: '/tecnicos', permission: 'manage_technicians' },

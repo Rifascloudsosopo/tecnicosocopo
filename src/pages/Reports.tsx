@@ -89,6 +89,24 @@ interface DailyRevenue {
   gastos: number;
 }
 
+interface SparePartUsageDetail {
+  id: string;
+  spare_part_name: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  order_number: string;
+  created_at: string;
+}
+
+interface LaborDetail {
+  id: string;
+  description: string;
+  amount: number;
+  order_number: string;
+  created_at: string;
+}
+
 interface OrderTransaction {
   id: string;
   order_number: string;
@@ -134,6 +152,8 @@ export default function Reports() {
   const [revenueData, setRevenueData] = useState<DailyRevenue[]>([]);
   const [orderTransactions, setOrderTransactions] = useState<OrderTransaction[]>([]);
   const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
+  const [sparePartsDetails, setSparePartsDetails] = useState<SparePartUsageDetail[]>([]);
+  const [laborDetails, setLaborDetails] = useState<LaborDetail[]>([]);
 
   useEffect(() => {
     loadReportData();
@@ -182,8 +202,8 @@ export default function Reports() {
           device_brand, device_model, reported_issue, technician_id,
           customers (name, phone),
           technicians (name),
-          spare_parts_usage (id, quantity, unit_price),
-          order_additional_costs (id, amount)
+          spare_parts_usage (id, quantity, unit_price, spare_part_id, spare_parts (name)),
+          order_additional_costs (id, amount, description, created_at)
         `)
         .gte('created_at', startDate)
         .lte('created_at', endDate)
@@ -231,6 +251,38 @@ export default function Reports() {
         created_at: p.created_at,
       }));
       setPaymentTransactions(paymentTx);
+
+      // Extract spare parts details
+      const partsDetails: SparePartUsageDetail[] = [];
+      (orders || []).forEach((o: any) => {
+        (o.spare_parts_usage || []).forEach((u: any) => {
+          partsDetails.push({
+            id: u.id,
+            spare_part_name: u.spare_parts?.name || 'Repuesto',
+            quantity: u.quantity,
+            unit_price: u.unit_price,
+            total: u.quantity * u.unit_price,
+            order_number: o.order_number,
+            created_at: o.created_at,
+          });
+        });
+      });
+      setSparePartsDetails(partsDetails);
+
+      // Extract labor details
+      const laborList: LaborDetail[] = [];
+      (orders || []).forEach((o: any) => {
+        (o.order_additional_costs || []).forEach((c: any) => {
+          laborList.push({
+            id: c.id,
+            description: c.description || 'Mano de obra',
+            amount: c.amount,
+            order_number: o.order_number,
+            created_at: c.created_at || o.created_at,
+          });
+        });
+      });
+      setLaborDetails(laborList);
 
       // Calculate stats
       const completedOrders = orders?.filter((o: any) => 
@@ -702,22 +754,156 @@ export default function Reports() {
               )}
             </Card>
 
+            {/* Spare Parts List */}
+            <Card className="glass-card">
+              <CardHeader 
+                className="cursor-pointer py-3"
+                onClick={() => setExpandedSection(expandedSection === 'spareparts' ? null : 'spareparts')}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Package className="w-4 h-4 text-accent" />
+                    Repuestos Vendidos ({sparePartsDetails.length})
+                  </CardTitle>
+                  {expandedSection === 'spareparts' ? (
+                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </div>
+              </CardHeader>
+              {expandedSection === 'spareparts' && (
+                <CardContent className="pt-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Repuesto</th>
+                          <th className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground">Cant.</th>
+                          <th className="px-2 py-1.5 text-right text-xs font-medium text-muted-foreground">P.Unit</th>
+                          <th className="px-2 py-1.5 text-right text-xs font-medium text-muted-foreground">Total</th>
+                          <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Orden</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {sparePartsDetails.map((sp) => (
+                          <tr key={sp.id} className="hover:bg-muted/30">
+                            <td className="px-2 py-1.5 font-medium">{sp.spare_part_name}</td>
+                            <td className="px-2 py-1.5 text-center">{sp.quantity}</td>
+                            <td className="px-2 py-1.5 text-right text-muted-foreground">${sp.unit_price.toFixed(2)}</td>
+                            <td className="px-2 py-1.5 text-right font-medium text-accent">${sp.total.toFixed(2)}</td>
+                            <td className="px-2 py-1.5 text-primary text-xs">{sp.order_number}</td>
+                          </tr>
+                        ))}
+                        {sparePartsDetails.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-2 py-6 text-center text-muted-foreground">
+                              No hay repuestos vendidos en este período
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot className="border-t-2 border-border">
+                        <tr className="font-semibold">
+                          <td colSpan={3} className="px-2 py-1.5 text-sm">Total Repuestos</td>
+                          <td className="px-2 py-1.5 text-right text-accent">
+                            ${sparePartsDetails.reduce((s, sp) => s + sp.total, 0).toFixed(2)}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* Labor List */}
+            <Card className="glass-card">
+              <CardHeader 
+                className="cursor-pointer py-3"
+                onClick={() => setExpandedSection(expandedSection === 'labor' ? null : 'labor')}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Wrench className="w-4 h-4 text-warning" />
+                    Mano de Obra ({laborDetails.length})
+                  </CardTitle>
+                  {expandedSection === 'labor' ? (
+                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </div>
+              </CardHeader>
+              {expandedSection === 'labor' && (
+                <CardContent className="pt-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Descripción</th>
+                          <th className="px-2 py-1.5 text-right text-xs font-medium text-muted-foreground">Monto</th>
+                          <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Orden</th>
+                          <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {laborDetails.map((lb) => (
+                          <tr key={lb.id} className="hover:bg-muted/30">
+                            <td className="px-2 py-1.5 font-medium">{lb.description}</td>
+                            <td className="px-2 py-1.5 text-right font-medium text-warning">${lb.amount.toFixed(2)}</td>
+                            <td className="px-2 py-1.5 text-primary text-xs">{lb.order_number}</td>
+                            <td className="px-2 py-1.5 text-xs text-muted-foreground">
+                              {format(new Date(lb.created_at), 'dd/MM/yy')}
+                            </td>
+                          </tr>
+                        ))}
+                        {laborDetails.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                              No hay mano de obra registrada en este período
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot className="border-t-2 border-border">
+                        <tr className="font-semibold">
+                          <td className="px-2 py-1.5 text-sm">Total Mano de Obra</td>
+                          <td className="px-2 py-1.5 text-right text-warning">
+                            ${laborDetails.reduce((s, lb) => s + lb.amount, 0).toFixed(2)}
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <p className="text-sm text-muted-foreground">Total Órdenes</p>
-                <p className="text-2xl font-bold">{orderTransactions.length}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Total Órdenes</p>
+                <p className="text-xl font-bold">{orderTransactions.length}</p>
               </div>
-              <div className="p-4 bg-success/10 rounded-lg">
-                <p className="text-sm text-muted-foreground">Total Cobrado</p>
-                <p className="text-2xl font-bold text-success">
+              <div className="p-3 bg-success/10 rounded-lg">
+                <p className="text-xs text-muted-foreground">Total Cobrado</p>
+                <p className="text-xl font-bold text-success">
                   ${paymentTransactions.reduce((s, t) => s + t.amount, 0).toFixed(2)}
                 </p>
               </div>
-              <div className="p-4 bg-destructive/10 rounded-lg">
-                <p className="text-sm text-muted-foreground">Total Pendiente</p>
-                <p className="text-2xl font-bold text-destructive">
-                  ${orderTransactions.reduce((s, t) => s + t.pending, 0).toFixed(2)}
+              <div className="p-3 bg-accent/10 rounded-lg">
+                <p className="text-xs text-muted-foreground">Repuestos</p>
+                <p className="text-xl font-bold text-accent">
+                  ${sparePartsDetails.reduce((s, sp) => s + sp.total, 0).toFixed(2)}
+                </p>
+              </div>
+              <div className="p-3 bg-warning/10 rounded-lg">
+                <p className="text-xs text-muted-foreground">Mano de Obra</p>
+                <p className="text-xl font-bold text-warning">
+                  ${laborDetails.reduce((s, lb) => s + lb.amount, 0).toFixed(2)}
                 </p>
               </div>
             </div>

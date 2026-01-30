@@ -44,14 +44,20 @@ function MainLayoutContent({ children }: MainLayoutProps) {
             >
               <Menu className="w-5 h-5" />
             </Button>
-            <OnlineStatusBadge />
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-muted-foreground hidden sm:inline">Nandez System</span>
+              <OnlineStatusBadge />
+            </div>
           </header>
         )}
 
         {/* Desktop Header with Status */}
         {!isMobile && (
           <header className="sticky top-0 z-30 flex items-center justify-end px-6 h-14 bg-background/95 backdrop-blur border-b border-border">
-            <OnlineStatusBadge />
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-muted-foreground">Nandez System</span>
+              <OnlineStatusBadge />
+            </div>
           </header>
         )}
 
