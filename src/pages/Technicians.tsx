@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Phone, Wrench, Edit, Trash2, CheckCircle, XCircle, Loader2, Link2, Shield } from 'lucide-react';
+import { Plus, Phone, Wrench, Edit, Trash2, CheckCircle, XCircle, Loader2, Link2, Shield, Mail, Lock, UserPlus } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,7 +58,10 @@ export default function Technicians() {
     phone: '',
     specialty: '',
     user_id: '',
+    email: '',
+    password: '',
   });
+  const [createMode, setCreateMode] = useState<'new' | 'link'>('new');
 
   useEffect(() => {
     loadTechnicians();
@@ -109,7 +112,8 @@ export default function Technicians() {
 
   function openCreateDialog() {
     setEditingTech(null);
-    setFormData({ name: '', phone: '', specialty: '', user_id: '' });
+    setFormData({ name: '', phone: '', specialty: '', user_id: '', email: '', password: '' });
+    setCreateMode('new');
     setIsDialogOpen(true);
   }
 
@@ -120,6 +124,8 @@ export default function Technicians() {
       phone: tech.phone,
       specialty: tech.specialty || '',
       user_id: tech.user_id || '',
+      email: '',
+      password: '',
     });
     setIsDialogOpen(true);
   }
@@ -136,6 +142,79 @@ export default function Technicians() {
       return;
     }
 
+    // If creating new technician with new user account
+    if (!editingTech && createMode === 'new') {
+      if (!formData.email.trim() || !formData.password.trim()) {
+        toast({
+          title: 'Campos requeridos',
+          description: 'Email y contraseña son obligatorios para crear un técnico con acceso',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (formData.password.length < 6) {
+        toast({
+          title: 'Contraseña muy corta',
+          description: 'La contraseña debe tener al menos 6 caracteres',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setSaving(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const response = await fetch(
+          `https://waehmrkxueixnckjgmfq.supabase.co/functions/v1/create-technician-user`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({
+              email: formData.email.trim(),
+              password: formData.password,
+              fullName: formData.name.trim(),
+              technicianData: {
+                name: formData.name.trim(),
+                phone: formData.phone.trim(),
+                specialty: formData.specialty.trim() || null,
+              },
+            }),
+          }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Error al crear el técnico');
+        }
+
+        setTechnicians([result.technician, ...technicians]);
+        toast({
+          title: 'Técnico creado',
+          description: `${result.technician.name} puede iniciar sesión con ${formData.email}`,
+        });
+
+        setFormData({ name: '', phone: '', specialty: '', user_id: '', email: '', password: '' });
+        setIsDialogOpen(false);
+      } catch (error: any) {
+        console.error('Error creating technician:', error);
+        toast({
+          title: 'Error al crear técnico',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // Existing logic for editing or linking existing user
     setSaving(true);
     try {
       const techData = {
@@ -159,7 +238,7 @@ export default function Technicians() {
         ));
         toast({ title: 'Técnico actualizado' });
       } else {
-        // Create
+        // Create without user (link mode with no user selected)
         const { data, error } = await supabase
           .from('technicians')
           .insert({ ...techData, is_active: true })
@@ -175,7 +254,7 @@ export default function Technicians() {
         });
       }
 
-      setFormData({ name: '', phone: '', specialty: '', user_id: '' });
+      setFormData({ name: '', phone: '', specialty: '', user_id: '', email: '', password: '' });
       setIsDialogOpen(false);
       setEditingTech(null);
     } catch (error: any) {
@@ -316,31 +395,78 @@ export default function Technicians() {
                           onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="user_id" className="flex items-center gap-2">
-                          <Link2 className="w-4 h-4" />
-                          Vincular a Usuario (Opcional)
-                        </Label>
-                        <Select
-                          value={formData.user_id}
-                          onValueChange={(v) => setFormData({ ...formData, user_id: v === 'none' ? '' : v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Sin vincular" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sin vincular</SelectItem>
-                            {availableUsers.map((user) => (
-                              <SelectItem key={user.id} value={user.id}>
-                                {user.full_name || user.email || user.id.slice(0, 8)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          Al vincular, este técnico podrá iniciar sesión. Los permisos se configuran en la pestaña "Permisos".
-                        </p>
-                      </div>
+
+                      {/* Show email/password fields for new technicians only */}
+                      {!editingTech && (
+                        <div className="border-t pt-4 mt-4 space-y-4">
+                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            <UserPlus className="w-4 h-4" />
+                            Credenciales de Acceso
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="email" className="flex items-center gap-2">
+                              <Mail className="w-4 h-4 text-muted-foreground" />
+                              Email *
+                            </Label>
+                            <Input
+                              id="email"
+                              type="email"
+                              placeholder="tecnico@email.com"
+                              value={formData.email}
+                              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="password" className="flex items-center gap-2">
+                              <Lock className="w-4 h-4 text-muted-foreground" />
+                              Contraseña *
+                            </Label>
+                            <Input
+                              id="password"
+                              type="password"
+                              placeholder="Mínimo 6 caracteres"
+                              value={formData.password}
+                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                              required
+                              minLength={6}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            El técnico usará estas credenciales para iniciar sesión en la aplicación.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Show user linking only for editing */}
+                      {editingTech && (
+                        <div className="space-y-2">
+                          <Label htmlFor="user_id" className="flex items-center gap-2">
+                            <Link2 className="w-4 h-4" />
+                            Vincular a Usuario (Opcional)
+                          </Label>
+                          <Select
+                            value={formData.user_id}
+                            onValueChange={(v) => setFormData({ ...formData, user_id: v === 'none' ? '' : v })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Sin vincular" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Sin vincular</SelectItem>
+                              {availableUsers.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.full_name || user.email || user.id.slice(0, 8)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Al vincular, este técnico podrá iniciar sesión. Los permisos se configuran en la pestaña "Permisos".
+                          </p>
+                        </div>
+                      )}
+
                       <div className="flex gap-3 pt-4">
                         <Button
                           type="button"
