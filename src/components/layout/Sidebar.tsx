@@ -19,16 +19,24 @@ import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { usePermissions, Permission } from '@/hooks/usePermissions';
 
-const menuItems = [
+interface MenuItem {
+  icon: typeof LayoutDashboard;
+  label: string;
+  path: string;
+  permission?: Permission | Permission[];
+}
+
+const menuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: Users, label: 'Clientes', path: '/clientes' },
+  { icon: Users, label: 'Clientes', path: '/clientes', permission: 'view_customers' },
   { icon: ClipboardList, label: 'Órdenes', path: '/ordenes' },
-  { icon: Wrench, label: 'Técnicos', path: '/tecnicos' },
-  { icon: Package, label: 'Inventario', path: '/inventario' },
-  { icon: MessageSquare, label: 'WhatsApp', path: '/whatsapp' },
-  { icon: BarChart3, label: 'Reportes', path: '/reportes' },
-  { icon: Settings, label: 'Configuración', path: '/configuracion' },
+  { icon: Wrench, label: 'Técnicos', path: '/tecnicos', permission: 'manage_technicians' },
+  { icon: Package, label: 'Inventario', path: '/inventario', permission: 'view_inventory' },
+  { icon: MessageSquare, label: 'WhatsApp', path: '/whatsapp', permission: 'manage_whatsapp' },
+  { icon: BarChart3, label: 'Reportes', path: '/reportes', permission: 'view_reports' },
+  { icon: Settings, label: 'Configuración', path: '/configuracion', permission: 'view_settings' },
 ];
 
 interface SidebarProps {
@@ -42,12 +50,24 @@ export function Sidebar({ onClose }: SidebarProps) {
   const isMobile = useIsMobile();
   const { signOut, user } = useAuth();
   const { settings } = useCompanySettings();
+  const { isAdmin, can, loading: permissionsLoading } = usePermissions();
 
   const handleNavClick = () => {
     if (isMobile && onClose) {
       onClose();
     }
   };
+
+  // Filter menu items based on permissions
+  const filteredMenuItems = menuItems.filter(item => {
+    if (!item.permission) return true; // No permission required
+    if (isAdmin) return true; // Admins see everything
+    
+    if (Array.isArray(item.permission)) {
+      return item.permission.some(p => can(p));
+    }
+    return can(item.permission);
+  });
 
   const handleLogout = async () => {
     await signOut();
@@ -101,7 +121,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {menuItems.map((item) => {
+        {filteredMenuItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <Link
