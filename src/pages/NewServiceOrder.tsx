@@ -16,6 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Customer {
   id: string;
@@ -24,15 +25,10 @@ interface Customer {
   phone: string;
 }
 
-interface Technician {
-  id: string;
-  name: string;
-  specialty: string | null;
-}
-
 export default function NewServiceOrder() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { currentTechnicianId } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -43,10 +39,6 @@ export default function NewServiceOrder() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
   const [customerNotFound, setCustomerNotFound] = useState(false);
-
-  // Technicians
-  const [technicians, setTechnicians] = useState<Technician[]>([]);
-  const [selectedTechnician, setSelectedTechnician] = useState<string>('');
 
   // Device data
   const [deviceData, setDeviceData] = useState({
@@ -72,17 +64,6 @@ export default function NewServiceOrder() {
     warrantyDays: '30',
   });
 
-  useEffect(() => {
-    loadTechnicians();
-  }, []);
-
-  async function loadTechnicians() {
-    const { data } = await (supabase
-      .from('technicians') as any)
-      .select('id, name, specialty')
-      .eq('is_active', true);
-    setTechnicians(data || []);
-  }
 
   async function handleCedulaSearch() {
     if (!cedulaSearch.trim()) return;
@@ -155,7 +136,7 @@ export default function NewServiceOrder() {
         customerId = newCust.id;
       }
 
-      // Create order
+      // Create order - auto-assign current technician if logged in as one
       const initialBudget = parseFloat(budget.initial) || 0;
       const advancePayment = parseFloat(budget.advance) || 0;
 
@@ -163,7 +144,7 @@ export default function NewServiceOrder() {
         .from('service_orders') as any)
         .insert({
           customer_id: customerId,
-          technician_id: selectedTechnician || null,
+          technician_id: currentTechnicianId || null,
           device_brand: deviceData.brand.trim(),
           device_model: deviceData.model.trim(),
           device_color: deviceData.color.trim() || null,
@@ -499,21 +480,6 @@ export default function NewServiceOrder() {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="technician">Asignar Técnico</Label>
-                <Select value={selectedTechnician} onValueChange={setSelectedTechnician}>
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue placeholder="Seleccionar técnico (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {technicians.map((tech) => (
-                      <SelectItem key={tech.id} value={tech.id}>
-                        {tech.name} {tech.specialty && `(${tech.specialty})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
               <div className="flex justify-between">
                 <Button variant="outline" onClick={() => setStep(2)}>
