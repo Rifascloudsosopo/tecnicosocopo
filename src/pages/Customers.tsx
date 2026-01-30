@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, Phone, Mail, MapPin, History, Loader2, Edit, Trash2, X, Eye } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { SimplePagination } from '@/components/ui/SimplePagination';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
@@ -41,6 +42,8 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
   const { toast } = useToast();
   const { isOnline, insertWithSync, updateWithSync, deleteWithSync, fetchAndCache } = useOfflineSync();
 
@@ -200,6 +203,18 @@ export default function Customers() {
       c.phone.includes(searchQuery)
   );
 
+  // Pagination
+  const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
+  const paginatedCustomers = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredCustomers.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCustomers, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   return (
     <MainLayout>
       <div className="animate-fade-in">
@@ -327,7 +342,7 @@ export default function Customers() {
           <>
             {/* Customers Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-              {filteredCustomers.map((customer) => (
+              {paginatedCustomers.map((customer) => (
                 <div
                   key={customer.id}
                   className="glass-card rounded-xl p-4 md:p-5 hover:shadow-xl transition-all duration-300"
@@ -396,6 +411,15 @@ export default function Customers() {
                 </div>
               ))}
             </div>
+
+            {/* Pagination */}
+            <SimplePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={filteredCustomers.length}
+              itemsPerPage={itemsPerPage}
+            />
 
             {filteredCustomers.length === 0 && !loading && (
               <div className="text-center py-12">
