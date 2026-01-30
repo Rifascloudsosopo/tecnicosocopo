@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useCompanySettings } from './useCompanySettings';
 
 export interface WhatsAppTemplate {
   id: string;
@@ -33,8 +32,8 @@ export function useWhatsAppTemplates() {
   const query = useQuery({
     queryKey: ['whatsapp-templates'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('whatsapp_templates')
+      const { data, error } = await (supabase
+        .from('whatsapp_templates') as any)
         .select('*')
         .order('created_at', { ascending: true });
 
@@ -45,8 +44,8 @@ export function useWhatsAppTemplates() {
 
   const createMutation = useMutation({
     mutationFn: async (template: Omit<WhatsAppTemplate, 'id' | 'created_at'>) => {
-      const { data, error } = await supabase
-        .from('whatsapp_templates')
+      const { data, error } = await (supabase
+        .from('whatsapp_templates') as any)
         .insert(template)
         .select()
         .single();
@@ -69,8 +68,8 @@ export function useWhatsAppTemplates() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<WhatsAppTemplate> & { id: string }) => {
-      const { error } = await supabase
-        .from('whatsapp_templates')
+      const { error } = await (supabase
+        .from('whatsapp_templates') as any)
         .update(updates)
         .eq('id', id);
 
@@ -91,8 +90,8 @@ export function useWhatsAppTemplates() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('whatsapp_templates')
+      const { error } = await (supabase
+        .from('whatsapp_templates') as any)
         .delete()
         .eq('id', id);
 

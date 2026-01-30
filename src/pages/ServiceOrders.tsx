@@ -29,6 +29,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { useWhatsAppTemplates, openWhatsAppWithTemplate } from '@/hooks/useWhatsAppTemplates';
 import { printTicket } from '@/lib/printTicket';
+import { StatusChangeDialog } from '@/components/orders/StatusChangeDialog';
 
 interface ServiceOrder {
   id: string;
@@ -66,6 +67,12 @@ export default function ServiceOrders() {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [statusChangeDialog, setStatusChangeDialog] = useState<{
+    open: boolean;
+    orderId: string;
+    currentStatus: string;
+    newStatus: string;
+  }>({ open: false, orderId: '', currentStatus: '', newStatus: '' });
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const { settings } = useCompanySettings();
@@ -78,8 +85,8 @@ export default function ServiceOrders() {
   async function loadOrders() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('service_orders')
+      const { data, error } = await (supabase
+        .from('service_orders') as any)
         .select(`
           *,
           customers (name, phone, cedula),
@@ -141,7 +148,20 @@ export default function ServiceOrders() {
     printTicket(order, settings, type);
   }
 
-  async function updateStatus(orderId: string, newStatus: string) {
+  function handleStatusChange(orderId: string, currentStatus: string, newStatus: string) {
+    if (currentStatus === newStatus) return;
+    setStatusChangeDialog({
+      open: true,
+      orderId,
+      currentStatus,
+      newStatus,
+    });
+  }
+
+  async function confirmStatusChange() {
+    const { orderId, newStatus } = statusChangeDialog;
+    setStatusChangeDialog({ ...statusChangeDialog, open: false });
+
     try {
       const updates: any = { status: newStatus };
       
@@ -156,8 +176,8 @@ export default function ServiceOrders() {
         updates.warranty_expires_at = warrantyExpiresAt.toISOString();
       }
 
-      const { error } = await supabase
-        .from('service_orders')
+      const { error } = await (supabase
+        .from('service_orders') as any)
         .update(updates)
         .eq('id', orderId);
 
@@ -235,7 +255,7 @@ export default function ServiceOrders() {
 
             <Select
               value={order.status}
-              onValueChange={(value) => updateStatus(order.id, value)}
+              onValueChange={(value) => handleStatusChange(order.id, order.status, value)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Cambiar estado" />
@@ -396,7 +416,7 @@ export default function ServiceOrders() {
                           <td className="px-5 py-4">
                             <Select
                               value={order.status}
-                              onValueChange={(value) => updateStatus(order.id, value)}
+                              onValueChange={(value) => handleStatusChange(order.id, order.status, value)}
                             >
                               <SelectTrigger className="w-32 h-8">
                                 <StatusBadge status={order.status} />
@@ -592,6 +612,15 @@ export default function ServiceOrders() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Status Change Confirmation Dialog */}
+      <StatusChangeDialog
+        open={statusChangeDialog.open}
+        onOpenChange={(open) => setStatusChangeDialog({ ...statusChangeDialog, open })}
+        currentStatus={statusChangeDialog.currentStatus}
+        newStatus={statusChangeDialog.newStatus}
+        onConfirm={confirmStatusChange}
+      />
     </MainLayout>
   );
 }

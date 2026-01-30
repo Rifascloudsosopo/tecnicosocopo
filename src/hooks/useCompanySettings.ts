@@ -17,7 +17,7 @@ export interface CompanySettings {
 }
 
 const defaultSettings: Omit<CompanySettings, 'id'> = {
-  name: 'TechFix Pro',
+  name: 'Mi Taller',
   rif: null,
   address: null,
   phone: null,
@@ -40,8 +40,8 @@ export function useCompanySettings() {
   const query = useQuery({
     queryKey: ['company-settings'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('company_settings')
+      const { data, error } = await (supabase
+        .from('company_settings') as any)
         .select('*')
         .limit(1)
         .maybeSingle();
@@ -53,8 +53,8 @@ export function useCompanySettings() {
       }
 
       // Create default settings if none exist
-      const { data: newData, error: insertError } = await supabase
-        .from('company_settings')
+      const { data: newData, error: insertError } = await (supabase
+        .from('company_settings') as any)
         .insert(defaultSettings)
         .select()
         .single();
@@ -69,8 +69,8 @@ export function useCompanySettings() {
     mutationFn: async (updates: Partial<CompanySettings>) => {
       if (!query.data?.id) throw new Error('No settings ID');
       
-      const { error } = await supabase
-        .from('company_settings')
+      const { error } = await (supabase
+        .from('company_settings') as any)
         .update(updates)
         .eq('id', query.data.id);
 

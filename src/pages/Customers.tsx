@@ -82,8 +82,8 @@ export default function Customers() {
     setLoadingHistory(true);
 
     try {
-      const { data, error } = await supabase
-        .from('service_orders')
+      const { data, error } = await (supabase
+        .from('service_orders') as any)
         .select('id, order_number, device_brand, device_model, status, created_at, reported_issue')
         .eq('customer_id', customer.id)
         .order('created_at', { ascending: false });

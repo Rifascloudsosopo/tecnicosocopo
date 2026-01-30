@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Phone, Wrench, Edit, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Plus, Phone, Wrench, Edit, Trash2, CheckCircle, XCircle, Loader2, Link2 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,9 +10,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 interface Technician {
@@ -21,24 +28,35 @@ interface Technician {
   phone: string;
   specialty: string | null;
   is_active: boolean;
+  user_id: string | null;
   created_at: string;
+}
+
+interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
 }
 
 export default function Technicians() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingTech, setEditingTech] = useState<Technician | null>(null);
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     specialty: '',
+    user_id: '',
   });
 
   useEffect(() => {
     loadTechnicians();
+    loadUsers();
   }, []);
 
   async function loadTechnicians() {
@@ -63,6 +81,43 @@ export default function Technicians() {
     }
   }
 
+  async function loadUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, full_name');
+
+      if (error) throw error;
+      
+      // Map to expected format
+      const mappedUsers = (data || []).map(p => ({
+        id: p.user_id,
+        email: '',
+        full_name: p.full_name,
+      }));
+      setUsers(mappedUsers);
+    } catch (error: any) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  function openCreateDialog() {
+    setEditingTech(null);
+    setFormData({ name: '', phone: '', specialty: '', user_id: '' });
+    setIsDialogOpen(true);
+  }
+
+  function openEditDialog(tech: Technician) {
+    setEditingTech(tech);
+    setFormData({
+      name: tech.name,
+      phone: tech.phone,
+      specialty: tech.specialty || '',
+      user_id: tech.user_id || '',
+    });
+    setIsDialogOpen(true);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -77,26 +132,46 @@ export default function Technicians() {
 
     setSaving(true);
     try {
-      const { data, error } = await supabase
-        .from('technicians')
-        .insert({
-          name: formData.name.trim(),
-          phone: formData.phone.trim(),
-          specialty: formData.specialty.trim() || null,
-          is_active: true,
-        })
-        .select()
-        .single();
+      const techData = {
+        name: formData.name.trim(),
+        phone: formData.phone.trim(),
+        specialty: formData.specialty.trim() || null,
+        user_id: formData.user_id || null,
+      };
 
-      if (error) throw error;
+      if (editingTech) {
+        // Update
+        const { error } = await supabase
+          .from('technicians')
+          .update(techData)
+          .eq('id', editingTech.id);
 
-      setTechnicians([data, ...technicians]);
-      setFormData({ name: '', phone: '', specialty: '' });
+        if (error) throw error;
+
+        setTechnicians(technicians.map(t => 
+          t.id === editingTech.id ? { ...t, ...techData } : t
+        ));
+        toast({ title: 'Técnico actualizado' });
+      } else {
+        // Create
+        const { data, error } = await supabase
+          .from('technicians')
+          .insert({ ...techData, is_active: true })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setTechnicians([data, ...technicians]);
+        toast({
+          title: 'Técnico registrado',
+          description: `${data.name} ha sido agregado exitosamente`,
+        });
+      }
+
+      setFormData({ name: '', phone: '', specialty: '', user_id: '' });
       setIsDialogOpen(false);
-      toast({
-        title: 'Técnico registrado',
-        description: `${data.name} ha sido agregado exitosamente`,
-      });
+      setEditingTech(null);
     } catch (error: any) {
       console.error('Error saving technician:', error);
       toast({
@@ -159,6 +234,12 @@ export default function Technicians() {
 
   const activeTechnicians = technicians.filter((t) => t.is_active);
 
+  // Get list of users not yet linked to a technician
+  const availableUsers = users.filter(u => 
+    !technicians.some(t => t.user_id === u.id) || 
+    (editingTech && editingTech.user_id === u.id)
+  );
+
   return (
     <MainLayout>
       <div className="animate-fade-in">
@@ -172,14 +253,16 @@ export default function Technicians() {
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" onClick={openCreateDialog}>
                 <Plus className="w-4 h-4" />
                 Nuevo Técnico
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Registrar Técnico</DialogTitle>
+                <DialogTitle>
+                  {editingTech ? 'Editar Técnico' : 'Registrar Técnico'}
+                </DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 mt-4">
                 <div className="space-y-2">
@@ -211,12 +294,40 @@ export default function Technicians() {
                     onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user_id" className="flex items-center gap-2">
+                    <Link2 className="w-4 h-4" />
+                    Vincular a Usuario (Opcional)
+                  </Label>
+                  <Select
+                    value={formData.user_id}
+                    onValueChange={(v) => setFormData({ ...formData, user_id: v === 'none' ? '' : v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin vincular" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin vincular</SelectItem>
+                      {availableUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.full_name || user.email || user.id.slice(0, 8)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Al vincular, este técnico podrá iniciar sesión y ver sus órdenes asignadas.
+                  </p>
+                </div>
                 <div className="flex gap-3 pt-4">
                   <Button
                     type="button"
                     variant="outline"
                     className="flex-1"
-                    onClick={() => setIsDialogOpen(false)}
+                    onClick={() => {
+                      setIsDialogOpen(false);
+                      setEditingTech(null);
+                    }}
                     disabled={saving}
                   >
                     Cancelar
@@ -290,13 +401,25 @@ export default function Technicians() {
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                     <Phone className="w-4 h-4" />
                     <span>{tech.phone}</span>
                   </div>
 
+                  {tech.user_id && (
+                    <div className="flex items-center gap-2 text-sm text-success mb-4">
+                      <Link2 className="w-4 h-4" />
+                      <span>Vinculado a usuario</span>
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1 gap-1">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1 gap-1"
+                      onClick={() => openEditDialog(tech)}
+                    >
                       <Edit className="w-4 h-4" />
                       Editar
                     </Button>
