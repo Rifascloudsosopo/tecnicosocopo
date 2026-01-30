@@ -438,34 +438,6 @@ export default function Technicians() {
                         </div>
                       )}
 
-                      {/* Show user linking only for editing */}
-                      {editingTech && (
-                        <div className="space-y-2">
-                          <Label htmlFor="user_id" className="flex items-center gap-2">
-                            <Link2 className="w-4 h-4" />
-                            Vincular a Usuario (Opcional)
-                          </Label>
-                          <Select
-                            value={formData.user_id}
-                            onValueChange={(v) => setFormData({ ...formData, user_id: v === 'none' ? '' : v })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Sin vincular" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Sin vincular</SelectItem>
-                              {availableUsers.map((user) => (
-                                <SelectItem key={user.id} value={user.id}>
-                                  {user.full_name || user.email || user.id.slice(0, 8)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground">
-                            Al vincular, este técnico podrá iniciar sesión. Los permisos se configuran en la pestaña "Permisos".
-                          </p>
-                        </div>
-                      )}
 
                       <div className="flex gap-3 pt-4">
                         <Button
