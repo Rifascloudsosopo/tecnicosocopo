@@ -175,6 +175,27 @@ export default function ServiceOrders() {
 
   function handleStatusChange(orderId: string, currentStatus: string, newStatus: string) {
     if (currentStatus === newStatus) return;
+    
+    // Check if trying to mark as delivered with pending balance
+    if (newStatus === 'delivered') {
+      const order = orders.find(o => o.id === orderId);
+      if (order) {
+        const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+        const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+        const orderTotal = order.initial_budget + partsTotal + costsTotal;
+        const pendingAmount = orderTotal - order.total_paid;
+        
+        if (pendingAmount > 0) {
+          toast({
+            title: 'Pago pendiente',
+            description: `No se puede marcar como entregado. El cliente debe $${pendingAmount.toFixed(2)} pendiente.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+    }
+    
     setStatusChangeDialog({
       open: true,
       orderId,
@@ -284,7 +305,22 @@ export default function ServiceOrders() {
                 const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                 const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                 const orderTotal = order.initial_budget + partsTotal + costsTotal;
-                return <span className="text-sm font-medium">${order.total_paid} / ${orderTotal.toFixed(2)}</span>;
+                return <span className="text-sm font-medium">${order.total_paid.toFixed(2)} / ${orderTotal.toFixed(2)}</span>;
+              })()}
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Pendiente:</span>
+              {(() => {
+                const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                const orderTotal = order.initial_budget + partsTotal + costsTotal;
+                const pendingAmount = orderTotal - order.total_paid;
+                return (
+                  <span className={`text-sm font-semibold ${pendingAmount > 0 ? 'text-destructive' : 'text-success'}`}>
+                    ${pendingAmount.toFixed(2)}
+                  </span>
+                );
               })()}
             </div>
 
@@ -416,7 +452,7 @@ export default function ServiceOrders() {
               /* Desktop Table View */
               <div className="glass-card rounded-xl overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                <table className="w-full">
                     <thead>
                       <tr className="table-header">
                         <th className="px-5 py-3 text-left">Orden</th>
@@ -426,6 +462,7 @@ export default function ServiceOrders() {
                         <th className="px-5 py-3 text-left">Técnico</th>
                         <th className="px-5 py-3 text-left">Estado</th>
                         <th className="px-5 py-3 text-left">Total</th>
+                        <th className="px-5 py-3 text-left">Pendiente</th>
                         <th className="px-5 py-3 text-center">Acciones</th>
                       </tr>
                     </thead>
@@ -479,12 +516,20 @@ export default function ServiceOrders() {
                               const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                               const orderTotal = order.initial_budget + partsTotal + costsTotal;
                               return (
-                                <>
-                                  <p className="font-semibold text-foreground">${orderTotal.toFixed(2)}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    Pagado: ${order.total_paid}
-                                  </p>
-                                </>
+                                <p className="font-semibold text-foreground">${orderTotal.toFixed(2)}</p>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-5 py-4">
+                            {(() => {
+                              const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                              const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                              const orderTotal = order.initial_budget + partsTotal + costsTotal;
+                              const pendingAmount = orderTotal - order.total_paid;
+                              return (
+                                <p className={`font-semibold ${pendingAmount > 0 ? 'text-destructive' : 'text-success'}`}>
+                                  ${pendingAmount.toFixed(2)}
+                                </p>
                               );
                             })()}
                           </td>
