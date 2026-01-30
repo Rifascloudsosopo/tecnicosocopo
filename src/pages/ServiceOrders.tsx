@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Search,
   Plus,
@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   DollarSign,
+  CreditCard,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,8 @@ import { useWhatsAppTemplates, openWhatsAppWithTemplate } from '@/hooks/useWhats
 import { printTicket } from '@/lib/printTicket';
 import { StatusChangeDialog } from '@/components/orders/StatusChangeDialog';
 import { OrderCostsManager } from '@/components/orders/OrderCostsManager';
+import { PaymentDialog } from '@/components/orders/PaymentDialog';
+import { SimplePagination } from '@/components/ui/SimplePagination';
 
 interface SparePartUsage {
   id: string;
@@ -90,12 +93,20 @@ export default function ServiceOrders() {
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [costsDialogOrderId, setCostsDialogOrderId] = useState<string | null>(null);
+  const [paymentDialog, setPaymentDialog] = useState<{
+    open: boolean;
+    orderId: string;
+    orderNumber: string;
+    pendingAmount: number;
+  }>({ open: false, orderId: '', orderNumber: '', pendingAmount: 0 });
   const [statusChangeDialog, setStatusChangeDialog] = useState<{
     open: boolean;
     orderId: string;
     currentStatus: string;
     newStatus: string;
   }>({ open: false, orderId: '', currentStatus: '', newStatus: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const { settings } = useCompanySettings();
@@ -133,17 +144,31 @@ export default function ServiceOrders() {
     }
   }
 
-  const filteredOrders = orders.filter((order) => {
-    const matchesSearch =
-      order.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.customers?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.device_brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.device_model.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const matchesSearch =
+        order.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        order.customers?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        order.device_brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        order.device_model.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
 
-    return matchesSearch && matchesStatus;
-  });
+      return matchesSearch && matchesStatus;
+    });
+  }, [orders, searchQuery, statusFilter]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredOrders, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   function handleWhatsApp(order: ServiceOrder) {
     if (!order.customers?.phone) return;
@@ -359,6 +384,28 @@ export default function ServiceOrders() {
                 <DollarSign className="w-4 h-4 mr-1" />
                 Costos
               </Button>
+              {(() => {
+                const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                const orderTotal = order.initial_budget + partsTotal + costsTotal;
+                const pendingAmount = orderTotal - order.total_paid;
+                return pendingAmount > 0 ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-primary border-primary/30"
+                    onClick={() => setPaymentDialog({
+                      open: true,
+                      orderId: order.id,
+                      orderNumber: order.order_number,
+                      pendingAmount,
+                    })}
+                  >
+                    <CreditCard className="w-4 h-4 mr-1" />
+                    Pagar
+                  </Button>
+                ) : null;
+              })()}
               {order.customers?.phone && (
                 <Button
                   variant="outline"
@@ -444,9 +491,16 @@ export default function ServiceOrders() {
             {/* Mobile Card View */}
             {isMobile ? (
               <div className="space-y-4">
-                {filteredOrders.map((order) => (
+                {paginatedOrders.map((order) => (
                   <OrderCard key={order.id} order={order} />
                 ))}
+                <SimplePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalItems={filteredOrders.length}
+                  itemsPerPage={itemsPerPage}
+                />
               </div>
             ) : (
               /* Desktop Table View */
@@ -467,7 +521,7 @@ export default function ServiceOrders() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {filteredOrders.map((order) => (
+                      {paginatedOrders.map((order) => (
                         <tr key={order.id} className="hover:bg-muted/30 transition-colors">
                           <td className="px-3 py-2">
                             <span className="font-semibold text-primary text-sm">{order.order_number}</span>
@@ -553,6 +607,28 @@ export default function ServiceOrders() {
                               >
                                 <DollarSign className="w-3.5 h-3.5" />
                               </Button>
+                              {(() => {
+                                const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+                                const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+                                const orderTotal = order.initial_budget + partsTotal + costsTotal;
+                                const pendingAmount = orderTotal - order.total_paid;
+                                return pendingAmount > 0 ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-primary hover:text-primary"
+                                    title="Registrar Pago"
+                                    onClick={() => setPaymentDialog({
+                                      open: true,
+                                      orderId: order.id,
+                                      orderNumber: order.order_number,
+                                      pendingAmount,
+                                    })}
+                                  >
+                                    <CreditCard className="w-3.5 h-3.5" />
+                                  </Button>
+                                ) : null;
+                              })()}
                               {order.customers?.phone && (
                                 <Button
                                   variant="ghost"
@@ -580,6 +656,13 @@ export default function ServiceOrders() {
                     </tbody>
                   </table>
                 </div>
+                <SimplePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalItems={filteredOrders.length}
+                  itemsPerPage={itemsPerPage}
+                />
               </div>
             )}
 
@@ -843,6 +926,16 @@ export default function ServiceOrders() {
           onUpdate={loadOrders}
         />
       )}
+
+      {/* Payment Dialog */}
+      <PaymentDialog
+        open={paymentDialog.open}
+        onOpenChange={(open) => setPaymentDialog({ ...paymentDialog, open })}
+        orderId={paymentDialog.orderId}
+        orderNumber={paymentDialog.orderNumber}
+        pendingAmount={paymentDialog.pendingAmount}
+        onPaymentComplete={loadOrders}
+      />
     </MainLayout>
   );
 }

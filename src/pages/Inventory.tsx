@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Search,
   Plus,
@@ -42,6 +42,7 @@ import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { usePermissions } from '@/hooks/usePermissions';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { SimplePagination } from '@/components/ui/SimplePagination';
 
 interface SparePart {
   id: string;
@@ -93,6 +94,8 @@ export default function Inventory() {
     productsCount: 0,
     newCategory: '',
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
   
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -479,6 +482,18 @@ export default function Inventory() {
 
     return matchesSearch && matchesCategory;
   });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredParts.length / itemsPerPage);
+  const paginatedParts = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredParts.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredParts, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, categoryFilter, sortField, sortDirection]);
 
   const lowStockParts = parts.filter((p) => p.stock <= p.min_stock);
 
@@ -917,9 +932,16 @@ export default function Inventory() {
             {/* Mobile Card View */}
             {isMobile ? (
               <div className="space-y-4">
-                {filteredParts.map((part) => (
+                {paginatedParts.map((part) => (
                   <PartCard key={part.id} part={part} />
                 ))}
+                <SimplePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalItems={filteredParts.length}
+                  itemsPerPage={itemsPerPage}
+                />
               </div>
             ) : (
               /* Desktop Table View */
@@ -939,7 +961,7 @@ export default function Inventory() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {filteredParts.map((part) => {
+                      {paginatedParts.map((part) => {
                         const isLowStock = part.stock <= part.min_stock;
                         const isOutOfStock = part.stock === 0;
 
@@ -1027,6 +1049,13 @@ export default function Inventory() {
                     </tbody>
                   </table>
                 </div>
+                <SimplePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalItems={filteredParts.length}
+                  itemsPerPage={itemsPerPage}
+                />
               </div>
             )}
 

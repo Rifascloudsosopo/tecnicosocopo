@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Eye,
   List,
+  Package,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
@@ -61,6 +62,8 @@ interface ReportStats {
   avgRepairTime: number;
   customersServed: number;
   successRate: number;
+  sparePartsEarnings: number;
+  laborEarnings: number;
 }
 
 interface BrandData {
@@ -122,6 +125,8 @@ export default function Reports() {
     avgRepairTime: 0,
     customersServed: 0,
     successRate: 0,
+    sparePartsEarnings: 0,
+    laborEarnings: 0,
   });
   const [brandData, setBrandData] = useState<BrandData[]>([]);
   const [issueData, setIssueData] = useState<IssueData[]>([]);
@@ -234,10 +239,22 @@ export default function Reports() {
       
       const totalRevenue = payments?.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0) || 0;
       
-      // Total costs from spare parts usage
+      // Total costs from spare parts usage (purchase price - for cost calculation)
       const totalCosts = orders?.reduce((sum: number, o: any) => {
         const partsCost = o.spare_parts_usage?.reduce((s: number, u: any) => s + (u.quantity * u.unit_price), 0) || 0;
         return sum + partsCost;
+      }, 0) || 0;
+
+      // Calculate spare parts earnings (sale price of parts used)
+      const sparePartsEarnings = orders?.reduce((sum: number, o: any) => {
+        const partsTotal = o.spare_parts_usage?.reduce((s: number, u: any) => s + (u.quantity * u.unit_price), 0) || 0;
+        return sum + partsTotal;
+      }, 0) || 0;
+
+      // Calculate labor earnings (additional costs / extras)
+      const laborEarnings = orders?.reduce((sum: number, o: any) => {
+        const costsTotal = o.order_additional_costs?.reduce((s: number, c: any) => s + c.amount, 0) || 0;
+        return sum + costsTotal;
       }, 0) || 0;
 
       // Calculate average repair time (in days)
@@ -265,6 +282,8 @@ export default function Reports() {
         avgRepairTime: Math.round(avgTime * 10) / 10,
         customersServed: customersCount || 0,
         successRate: orders?.length ? Math.round((completedOrders.length / orders.length) * 100) : 0,
+        sparePartsEarnings,
+        laborEarnings,
       });
 
       // Calculate brand distribution
@@ -461,7 +480,7 @@ export default function Reports() {
         </div>
 
         {/* Financial Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5 mb-6 md:mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 mb-6 md:mb-8">
           <StatCard
             title="Ingresos Cobrados"
             value={`$${stats.totalRevenue.toLocaleString()}`}
@@ -481,10 +500,22 @@ export default function Reports() {
             iconClassName="bg-primary/10 text-primary"
           />
           <StatCard
+            title="Gan. Repuestos"
+            value={`$${stats.sparePartsEarnings.toLocaleString()}`}
+            icon={Package}
+            iconClassName="bg-accent/10 text-accent"
+          />
+          <StatCard
+            title="Mano de Obra"
+            value={`$${stats.laborEarnings.toLocaleString()}`}
+            icon={Wrench}
+            iconClassName="bg-warning/10 text-warning"
+          />
+          <StatCard
             title="Completadas"
             value={stats.completedOrders.toString()}
-            icon={Wrench}
-            iconClassName="bg-accent/10 text-accent"
+            icon={BarChart3}
+            iconClassName="bg-secondary text-secondary-foreground"
           />
         </div>
 
