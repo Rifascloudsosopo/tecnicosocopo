@@ -65,6 +65,7 @@ export function useAuthState() {
 
   useEffect(() => {
     let mounted = true;
+    let authSubscription: { unsubscribe: () => void } | null = null;
 
     const safeSetLoading = (value: boolean) => {
       if (mounted) setLoading(value);
@@ -76,46 +77,63 @@ export function useAuthState() {
       setUser(nextSession?.user ?? null);
     };
 
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        safeSetUserSession(session);
-        safeSetLoading(false);
-
-        if (session?.user) {
-          // Don't block auth loading on this request
-          void loadTechnicianIdForUser(session.user.id);
-        } else {
-          if (mounted) setCurrentTechnicianId(null);
-        }
-      }
-    );
-
-    // THEN check for existing session
-    (async () => {
+    // Initialize auth
+    const initAuth = async () => {
       try {
+        // Set up auth state listener FIRST
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (_event, session) => {
+            if (!mounted) return;
+            safeSetUserSession(session);
+            safeSetLoading(false);
+
+            if (session?.user) {
+              // Use setTimeout to avoid blocking and potential race conditions in Chrome
+              setTimeout(() => {
+                if (mounted) {
+                  loadTechnicianIdForUser(session.user.id);
+                }
+              }, 0);
+            } else {
+              if (mounted) setCurrentTechnicianId(null);
+            }
+          }
+        );
+
+        authSubscription = subscription;
+
+        // THEN check for existing session
         const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+        
         safeSetUserSession(session);
         safeSetLoading(false);
 
         if (session?.user) {
-          void loadTechnicianIdForUser(session.user.id);
+          loadTechnicianIdForUser(session.user.id);
         } else {
-          if (mounted) setCurrentTechnicianId(null);
+          setCurrentTechnicianId(null);
         }
       } catch (err) {
         console.error('Error loading auth session:', err);
         // Fix common case: corrupt stored session -> infinite spinner
         clearSupabaseAuthStorage();
-        safeSetUserSession(null);
-        if (mounted) setCurrentTechnicianId(null);
-        safeSetLoading(false);
+        if (mounted) {
+          safeSetUserSession(null);
+          setCurrentTechnicianId(null);
+          safeSetLoading(false);
+        }
       }
-    })();
+    };
+
+    initAuth();
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      if (authSubscription) {
+        authSubscription.unsubscribe();
+      }
     };
   }, []);
 
