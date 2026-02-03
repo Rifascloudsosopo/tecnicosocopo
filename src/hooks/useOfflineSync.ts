@@ -7,6 +7,33 @@ import { useToast } from '@/hooks/use-toast';
 // Helper to bypass TypeScript's strict table checking
 const db = supabase as any;
 
+// Some tables don't have created_at / updated_at columns.
+// If we always send these fields, Supabase inserts will fail (and the change is only queued).
+// This set keeps inserts/updates compatible across tables.
+const TABLES_WITH_CREATED_AT = new Set([
+  'activity_logs',
+  'customers',
+  'inventory_categories',
+  'order_additional_costs',
+  'order_payments',
+  'profiles',
+  'service_orders',
+  'spare_parts',
+  'spare_parts_usage',
+  'technicians',
+  'technician_permissions',
+  'whatsapp_templates',
+]);
+
+const TABLES_WITH_UPDATED_AT = new Set([
+  'company_settings',
+  'customers',
+  'profiles',
+  'service_orders',
+  'spare_parts',
+  'technician_permissions',
+]);
+
 interface ConflictResult {
   resolved: number;
   discarded: number;
@@ -35,6 +62,9 @@ export function useOfflineSync() {
     localUpdatedAt: string
   ): Promise<'local' | 'server' | 'no-conflict'> => {
     try {
+      // Tables without updated_at can't be compared reliably; default to local.
+      if (!TABLES_WITH_UPDATED_AT.has(table)) return 'local';
+
       const { data: serverData, error } = await db
         .from(table)
         .select('updated_at')
@@ -215,11 +245,12 @@ export function useOfflineSync() {
   ): Promise<T> => {
     const id = data.id || crypto.randomUUID();
     const now = new Date().toISOString();
-    const itemWithId = { 
-      ...data, 
-      id, 
-      created_at: now,
-      updated_at: now,
+
+    const itemWithId = {
+      ...data,
+      id,
+      ...(TABLES_WITH_CREATED_AT.has(table) ? { created_at: now } : {}),
+      ...(TABLES_WITH_UPDATED_AT.has(table) ? { updated_at: now } : {}),
     } as T & { id: string };
 
     // Always save locally first
@@ -267,7 +298,11 @@ export function useOfflineSync() {
     table: string,
     data: T
   ): Promise<T> => {
-    const updatedData = { ...data, updated_at: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const updatedData = {
+      ...data,
+      ...(TABLES_WITH_UPDATED_AT.has(table) ? { updated_at: now } : {}),
+    };
 
     // Update locally first
     await offlineStorage.put(table, updatedData as any);
