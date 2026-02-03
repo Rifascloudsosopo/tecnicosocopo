@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Phone, Mail, MapPin, History, Loader2, Edit, Trash2, X, Eye, WifiOff } from 'lucide-react';
+import { Search, Plus, Phone, Mail, MapPin, History, Loader2, Edit, Trash2, X, Eye } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SimplePagination } from '@/components/ui/SimplePagination';
-import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 
@@ -85,13 +85,14 @@ export default function Customers() {
     setLoadingHistory(true);
 
     try {
-      // Try to get orders from cache (works offline)
-      const allOrders = await fetchAndCache<ServiceOrder>('service_orders');
-      const customerOrders = allOrders
-        .filter((order: any) => order.customer_id === customer.id)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      
-      setCustomerOrders(customerOrders);
+      const { data, error } = await (supabase
+        .from('service_orders') as any)
+        .select('id, order_number, device_brand, device_model, status, created_at, reported_issue')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setCustomerOrders(data || []);
     } catch (error: any) {
       console.error('Error loading history:', error);
       toast({
@@ -220,20 +221,9 @@ export default function Customers() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 md:mb-8">
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Clientes</h1>
-              {!isOnline && (
-                <Badge variant="outline" className="gap-1 bg-warning/10 text-warning border-warning/30">
-                  <WifiOff className="w-3 h-3" />
-                  Datos locales
-                </Badge>
-              )}
-            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Clientes</h1>
             <p className="text-muted-foreground mt-1">
-              {isOnline 
-                ? `Gestiona tu base de clientes (${customers.length} registrados)`
-                : `Mostrando ${customers.length} clientes guardados localmente`
-              }
+              Gestiona tu base de clientes ({customers.length} registrados)
             </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={(open) => {

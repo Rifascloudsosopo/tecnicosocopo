@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Loader2, Wrench, Eye, EyeOff, WifiOff } from 'lucide-react';
+import { Mail, Lock, Loader2, Wrench, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,37 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
-import { hasValidOfflineSession } from '@/hooks/useOfflineAuth';
-import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
 export default function Login() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { signIn, user } = useAuth();
+  const { signIn } = useAuth();
   const { settings } = useCompanySettings();
-  const isOnline = useOnlineStatus();
   
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loginData, setLoginData] = useState({ email: '', password: '' });
-  
-  // Check if user can enter offline
-  const canEnterOffline = !isOnline && hasValidOfflineSession();
-  
-  // Redirect if already logged in
-  useEffect(() => {
-    if (user) {
-      navigate('/');
-    }
-  }, [user, navigate]);
-
-  function handleOfflineEntry() {
-    toast({ 
-      title: 'Modo sin conexión', 
-      description: 'Entrando con datos locales guardados' 
-    });
-    navigate('/');
-  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -132,36 +111,16 @@ export default function Login() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading || !isOnline}>
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Iniciando sesión...
                   </>
-                ) : !isOnline ? (
-                  'Sin conexión'
                 ) : (
                   'Iniciar Sesión'
                 )}
               </Button>
-              
-              {canEnterOffline && (
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full mt-2"
-                  onClick={handleOfflineEntry}
-                >
-                  <WifiOff className="w-4 h-4 mr-2" />
-                  Entrar sin conexión
-                </Button>
-              )}
-              
-              {!isOnline && !canEnterOffline && (
-                <p className="text-sm text-muted-foreground text-center mt-2">
-                  Necesitas conexión a internet para iniciar sesión por primera vez
-                </p>
-              )}
             </form>
           </CardContent>
         </Card>

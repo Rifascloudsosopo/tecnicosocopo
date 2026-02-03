@@ -8,7 +8,6 @@ interface SyncQueueItem {
   action: 'insert' | 'update' | 'delete';
   data: any;
   timestamp: number;
-  updated_at: string; // ISO string for conflict resolution
 }
 
 class OfflineStorage {
@@ -125,13 +124,12 @@ class OfflineStorage {
   }
 
   // Sync queue methods
-  async addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'timestamp' | 'updated_at'>): Promise<void> {
+  async addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'timestamp'>): Promise<void> {
     await this.init();
     const queueItem: SyncQueueItem = {
       ...item,
       id: crypto.randomUUID(),
       timestamp: Date.now(),
-      updated_at: new Date().toISOString(),
     };
 
     return new Promise((resolve, reject) => {

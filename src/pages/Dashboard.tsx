@@ -9,15 +9,12 @@ import {
   TrendingUp,
   Wrench,
   Loader2,
-  CloudOff,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { supabase } from '@/integrations/supabase/client';
 import { Link } from 'react-router-dom';
-import { useOfflineSync } from '@/hooks/useOfflineSync';
-import { offlineStorage } from '@/lib/offlineStorage';
 
 interface DashboardStats {
   totalOrders: number;
@@ -42,7 +39,6 @@ interface RecentOrder {
 }
 
 export default function Dashboard() {
-  const { isOnline, fetchAndCache } = useOfflineSync();
   const [stats, setStats] = useState<DashboardStats>({
     totalOrders: 0,
     pendingOrders: 0,
@@ -54,113 +50,74 @@ export default function Dashboard() {
   });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isFromCache, setIsFromCache] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
-  }, [isOnline]);
+  }, []);
 
   async function loadDashboardData() {
     setLoading(true);
     try {
-      if (isOnline) {
-        // Online: fetch from server with COUNT queries
-        setIsFromCache(false);
-        const [
-          { count: totalOrders },
-          { count: pendingOrders },
-          { count: inProgressOrders },
-          { count: completedCount },
-          { count: deliveredCount },
-          { count: customersCount },
-          { data: revenueData },
-          { data: lowStock },
-          { data: recent },
-        ] = await Promise.all([
-          (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }),
-          (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-          (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
-          (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'completed'),
-          (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
-          (supabase.from('customers') as any).select('id', { count: 'exact', head: true }),
-          (supabase.from('service_orders') as any).select('total_paid'),
-          (supabase.from('spare_parts') as any).select('stock, min_stock'),
-          (supabase.from('service_orders') as any)
-            .select('id, order_number, device_brand, device_model, status, created_at, customers (name)')
-            .order('created_at', { ascending: false })
-            .limit(5),
-        ]);
+      // Use COUNT queries with head:true - much more efficient than fetching all records
+      const [
+        { count: totalOrders },
+        { count: pendingOrders },
+        { count: inProgressOrders },
+        { count: completedCount },
+        { count: deliveredCount },
+        { count: customersCount },
+        { data: revenueData },
+        { data: lowStock },
+        { data: recent },
+      ] = await Promise.all([
+        // Total orders count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }),
+        // Pending count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        // In progress count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
+        // Completed count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+        // Delivered count
+        (supabase.from('service_orders') as any).select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
+        // Customers count
+        (supabase.from('customers') as any).select('id', { count: 'exact', head: true }),
+        // Revenue - only fetch total_paid column (minimal data transfer)
+        (supabase.from('service_orders') as any).select('total_paid'),
+        // Low stock items - only fetch necessary columns
+        (supabase.from('spare_parts') as any).select('stock, min_stock'),
+        // Recent orders - limited to 5
+        (supabase.from('service_orders') as any)
+          .select('id, order_number, device_brand, device_model, status, created_at, customers (name)')
+          .order('created_at', { ascending: false })
+          .limit(5),
+      ]);
 
-        const totalRevenue = revenueData?.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0) || 0;
-        const lowStockCount = lowStock?.filter((p: any) => (p.stock || 0) <= (p.min_stock || 5)).length || 0;
+      const totalRevenue = revenueData?.reduce((sum: number, o: any) => sum + (Number(o.total_paid) || 0), 0) || 0;
+      const lowStockCount = lowStock?.filter((p: any) => (p.stock || 0) <= (p.min_stock || 5)).length || 0;
 
-        setStats({
-          totalOrders: totalOrders || 0,
-          pendingOrders: pendingOrders || 0,
-          inProgressOrders: inProgressOrders || 0,
-          completedOrders: (completedCount || 0) + (deliveredCount || 0),
-          totalCustomers: customersCount || 0,
-          lowStockItems: lowStockCount,
-          totalRevenue,
-        });
+      setStats({
+        totalOrders: totalOrders || 0,
+        pendingOrders: pendingOrders || 0,
+        inProgressOrders: inProgressOrders || 0,
+        completedOrders: (completedCount || 0) + (deliveredCount || 0),
+        totalCustomers: customersCount || 0,
+        lowStockItems: lowStockCount,
+        totalRevenue,
+      });
 
-        const transformedRecent = (recent || []).map(order => ({
-          ...order,
-          status: order.status as RecentOrder['status'],
-          customers: Array.isArray(order.customers) 
-            ? order.customers[0] || null 
-            : order.customers,
-        }));
-        setRecentOrders(transformedRecent);
+      // Transform recent orders to match interface
+      const transformedRecent = (recent || []).map(order => ({
+        ...order,
+        status: order.status as RecentOrder['status'],
+        customers: Array.isArray(order.customers) 
+          ? order.customers[0] || null 
+          : order.customers,
+      }));
 
-        // Cache orders for offline use
-        if (recent && recent.length > 0) {
-          await offlineStorage.putAll('service_orders', recent);
-        }
-      } else {
-        // Offline: load from cache
-        setIsFromCache(true);
-        const cachedOrders = await offlineStorage.getAll<any>('service_orders');
-        const cachedCustomers = await offlineStorage.getAll<any>('customers');
-        const cachedParts = await offlineStorage.getAll<any>('spare_parts');
-
-        const pendingOrders = cachedOrders.filter(o => o.status === 'pending').length;
-        const inProgressOrders = cachedOrders.filter(o => o.status === 'in_progress').length;
-        const completedOrders = cachedOrders.filter(o => o.status === 'completed' || o.status === 'delivered').length;
-        const totalRevenue = cachedOrders.reduce((sum, o) => sum + (Number(o.total_paid) || 0), 0);
-        const lowStockCount = cachedParts.filter(p => (p.stock || 0) <= (p.min_stock || 5)).length;
-
-        setStats({
-          totalOrders: cachedOrders.length,
-          pendingOrders,
-          inProgressOrders,
-          completedOrders,
-          totalCustomers: cachedCustomers.length,
-          lowStockItems: lowStockCount,
-          totalRevenue,
-        });
-
-        // Get recent orders from cache
-        const sortedOrders = [...cachedOrders]
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 5);
-        
-        setRecentOrders(sortedOrders.map(order => ({
-          ...order,
-          status: order.status as RecentOrder['status'],
-        })));
-      }
+      setRecentOrders(transformedRecent);
     } catch (error) {
       console.error('Error loading dashboard:', error);
-      // Fallback to cache on error
-      setIsFromCache(true);
-      try {
-        const cachedOrders = await offlineStorage.getAll<any>('service_orders');
-        setStats(prev => ({
-          ...prev,
-          totalOrders: cachedOrders.length,
-        }));
-      } catch {}
     } finally {
       setLoading(false);
     }
@@ -182,15 +139,7 @@ export default function Dashboard() {
       <div className="animate-fade-in">
         {/* Header */}
         <div className="mb-6 md:mb-8">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Dashboard</h1>
-            {isFromCache && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-warning/10 text-warning">
-                <CloudOff className="w-3 h-3" />
-                Datos locales
-              </span>
-            )}
-          </div>
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
             Resumen general del taller
           </p>

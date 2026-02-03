@@ -11,7 +11,6 @@ import {
   ChevronUp,
   DollarSign,
   CreditCard,
-  CloudOff,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -36,8 +35,6 @@ import { StatusChangeDialog } from '@/components/orders/StatusChangeDialog';
 import { OrderCostsManager } from '@/components/orders/OrderCostsManager';
 import { PaymentDialog } from '@/components/orders/PaymentDialog';
 import { SimplePagination } from '@/components/ui/SimplePagination';
-import { useOfflineSync } from '@/hooks/useOfflineSync';
-import { offlineStorage } from '@/lib/offlineStorage';
 
 interface SparePartUsage {
   id: string;
@@ -89,13 +86,11 @@ interface ServiceOrder {
 }
 
 export default function ServiceOrders() {
-  const { isOnline, updateWithSync } = useOfflineSync();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isFromCache, setIsFromCache] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [costsDialogOrderId, setCostsDialogOrderId] = useState<string | null>(null);
@@ -121,90 +116,48 @@ export default function ServiceOrders() {
   // Server-side pagination - reload when page or filters change
   useEffect(() => {
     loadOrders();
-  }, [currentPage, statusFilter, searchQuery, isOnline]);
+  }, [currentPage, statusFilter, searchQuery]);
 
   async function loadOrders() {
     setLoading(true);
     try {
-      if (isOnline) {
-        setIsFromCache(false);
-        // Build query with server-side pagination
-        let query = (supabase.from('service_orders') as any)
-          .select(`
-            *,
-            customers (name, phone, cedula),
-            technicians (name),
-            spare_parts_usage (id, quantity, unit_price, spare_parts(name)),
-            order_additional_costs (id, description, amount)
-          `, { count: 'exact' })
-          .order('created_at', { ascending: false });
+      // Build query with server-side pagination
+      let query = (supabase.from('service_orders') as any)
+        .select(`
+          *,
+          customers (name, phone, cedula),
+          technicians (name),
+          spare_parts_usage (id, quantity, unit_price, spare_parts(name)),
+          order_additional_costs (id, description, amount)
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false });
 
-        // Apply status filter at database level
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter);
-        }
-
-        // Apply search filter at database level
-        if (searchQuery.trim()) {
-          const search = searchQuery.trim().toLowerCase();
-          query = query.or(`order_number.ilike.%${search}%,device_brand.ilike.%${search}%,device_model.ilike.%${search}%`);
-        }
-
-        // Apply pagination
-        const from = (currentPage - 1) * itemsPerPage;
-        const to = from + itemsPerPage - 1;
-        query = query.range(from, to);
-
-        const { data, count, error } = await query;
-
-        if (error) throw error;
-        setOrders((data || []) as unknown as ServiceOrder[]);
-        setTotalCount(count || 0);
-
-        // Cache orders for offline
-        if (data && data.length > 0) {
-          await offlineStorage.putAll('service_orders', data);
-        }
-      } else {
-        // Offline: load from cache
-        setIsFromCache(true);
-        let cachedOrders = await offlineStorage.getAll<any>('service_orders');
-
-        // Apply filters locally
-        if (statusFilter !== 'all') {
-          cachedOrders = cachedOrders.filter(o => o.status === statusFilter);
-        }
-        if (searchQuery.trim()) {
-          const search = searchQuery.trim().toLowerCase();
-          cachedOrders = cachedOrders.filter(o => 
-            o.order_number?.toLowerCase().includes(search) ||
-            o.device_brand?.toLowerCase().includes(search) ||
-            o.device_model?.toLowerCase().includes(search)
-          );
-        }
-
-        // Sort by created_at desc
-        cachedOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-        // Paginate locally
-        const from = (currentPage - 1) * itemsPerPage;
-        const paginatedOrders = cachedOrders.slice(from, from + itemsPerPage);
-
-        setOrders(paginatedOrders as unknown as ServiceOrder[]);
-        setTotalCount(cachedOrders.length);
+      // Apply status filter at database level
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
       }
+
+      // Apply search filter at database level
+      if (searchQuery.trim()) {
+        const search = searchQuery.trim().toLowerCase();
+        query = query.or(`order_number.ilike.%${search}%,device_brand.ilike.%${search}%,device_model.ilike.%${search}%`);
+      }
+
+      // Apply pagination
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      query = query.range(from, to);
+
+      const { data, count, error } = await query;
+
+      if (error) throw error;
+      setOrders((data || []) as unknown as ServiceOrder[]);
+      setTotalCount(count || 0);
     } catch (error: any) {
       console.error('Error loading orders:', error);
-      // Fallback to cache on error
-      setIsFromCache(true);
-      try {
-        const cachedOrders = await offlineStorage.getAll<any>('service_orders');
-        setOrders(cachedOrders as unknown as ServiceOrder[]);
-        setTotalCount(cachedOrders.length);
-      } catch {}
       toast({
         title: 'Error al cargar órdenes',
-        description: isOnline ? error.message : 'Mostrando datos locales',
+        description: error.message,
         variant: 'destructive',
       });
     } finally {
@@ -309,29 +262,18 @@ export default function ServiceOrders() {
         updates.warranty_expires_at = warrantyExpiresAt.toISOString();
       }
 
-      if (isOnline) {
-        const { error } = await (supabase
-          .from('service_orders') as any)
-          .update(updates)
-          .eq('id', orderId);
+      const { error } = await (supabase
+        .from('service_orders') as any)
+        .update(updates)
+        .eq('id', orderId);
 
-        if (error) throw error;
-      } else {
-        // Offline: update locally and queue for sync
-        const order = orders.find(o => o.id === orderId);
-        if (order) {
-          await updateWithSync('service_orders', { ...order, ...updates, id: orderId });
-        }
-      }
+      if (error) throw error;
 
       setOrders(orders.map(o => 
-        o.id === orderId ? { ...o, ...updates, status: newStatus as ServiceOrder['status'] } : o
+        o.id === orderId ? { ...o, status: newStatus as ServiceOrder['status'] } : o
       ));
       
-      toast({ 
-        title: 'Estado actualizado',
-        description: !isOnline ? 'Se sincronizará cuando vuelva la conexión' : undefined,
-      });
+      toast({ title: 'Estado actualizado' });
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -509,15 +451,7 @@ export default function ServiceOrders() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 md:mb-8">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Órdenes de Servicio</h1>
-              {isFromCache && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-warning/10 text-warning">
-                  <CloudOff className="w-3 h-3" />
-                  Datos locales
-                </span>
-              )}
-            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Órdenes de Servicio</h1>
             <p className="text-muted-foreground mt-1">
               Gestiona las reparaciones ({totalCount} órdenes)
             </p>
