@@ -47,8 +47,10 @@ export function usePermissions() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Prevent running if auth is still loading
     if (authLoading) return;
     
+    // Reset permissions if no user
     if (!user) {
       setPermissions({});
       setIsAdmin(false);
@@ -56,61 +58,74 @@ export function usePermissions() {
       return;
     }
 
-    loadPermissions();
-  }, [user, authLoading, currentTechnicianId]);
+    let cancelled = false;
 
-  async function loadPermissions() {
-    setLoading(true);
-    try {
-      // Check if user is admin
-      const { data: roleData, error: roleError } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user!.id)
-        .eq('role', 'admin')
-        .maybeSingle();
+    async function load() {
+      setLoading(true);
+      try {
+        // Check if user is admin
+        const { data: roleData, error: roleError } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user!.id)
+          .eq('role', 'admin')
+          .maybeSingle();
 
-      if (roleError) {
-        console.error('Error checking admin role:', roleError);
-      }
+        if (cancelled) return;
 
-      if (roleData) {
-        setIsAdmin(true);
-        // Admins have all permissions
-        const allPerms: Record<string, boolean> = {};
-        ALL_PERMISSIONS.forEach(p => allPerms[p.key] = true);
-        setPermissions(allPerms);
-        return;
-      }
-
-      setIsAdmin(false);
-
-      // For technicians, load their specific permissions
-      if (currentTechnicianId) {
-        const { data: permData, error } = await supabase
-          .from('technician_permissions')
-          .select('permission, granted')
-          .eq('technician_id', currentTechnicianId);
-
-        if (error) {
-          console.error('Error loading permissions:', error);
+        if (roleError) {
+          console.error('Error checking admin role:', roleError);
         }
 
-        const perms: Record<string, boolean> = {};
-        (permData || []).forEach((p: PermissionRecord) => {
-          perms[p.permission] = p.granted;
-        });
-        setPermissions(perms);
-      } else {
-        // User is not admin and not linked to a technician - no permissions
-        setPermissions({});
+        if (roleData) {
+          setIsAdmin(true);
+          // Admins have all permissions
+          const allPerms: Record<string, boolean> = {};
+          ALL_PERMISSIONS.forEach(p => allPerms[p.key] = true);
+          setPermissions(allPerms);
+          setLoading(false);
+          return;
+        }
+
+        setIsAdmin(false);
+
+        // For technicians, load their specific permissions
+        if (currentTechnicianId) {
+          const { data: permData, error } = await supabase
+            .from('technician_permissions')
+            .select('permission, granted')
+            .eq('technician_id', currentTechnicianId);
+
+          if (cancelled) return;
+
+          if (error) {
+            console.error('Error loading permissions:', error);
+          }
+
+          const perms: Record<string, boolean> = {};
+          (permData || []).forEach((p: PermissionRecord) => {
+            perms[p.permission] = p.granted;
+          });
+          setPermissions(perms);
+        } else {
+          // User is not admin and not linked to a technician - no permissions
+          setPermissions({});
+        }
+      } catch (error) {
+        console.error('Error in loadPermissions:', error);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      console.error('Error in loadPermissions:', error);
-    } finally {
-      setLoading(false);
     }
-  }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, authLoading, currentTechnicianId]);
 
   function can(permission: Permission): boolean {
     if (isAdmin) return true;
@@ -132,6 +147,5 @@ export function usePermissions() {
     can,
     canAny,
     canAll,
-    refresh: loadPermissions,
   };
 }
