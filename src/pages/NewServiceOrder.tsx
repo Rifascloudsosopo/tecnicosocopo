@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, User, Smartphone, FileText, DollarSign, Loader2, Check, Plus, Trash2, Package, Wrench } from 'lucide-react';
+import { ArrowLeft, Search, User, Smartphone, FileText, DollarSign, Loader2, Check, Plus, Trash2, Package, Wrench, WifiOff } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,9 +14,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/integrations/supabase/client';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
+import { offlineStorage } from '@/lib/offlineStorage';
 
 interface Customer {
   id: string;
@@ -48,6 +50,7 @@ export default function NewServiceOrder() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { currentTechnicianId } = useAuth();
+  const { isOnline, insertWithSync, updateWithSync, fetchAndCache } = useOfflineSync();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,6 +61,7 @@ export default function NewServiceOrder() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
   const [customerNotFound, setCustomerNotFound] = useState(false);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
 
   // Device data
   const [deviceData, setDeviceData] = useState({
@@ -94,19 +98,44 @@ export default function NewServiceOrder() {
   const [costDescription, setCostDescription] = useState('');
   const [costAmount, setCostAmount] = useState('');
 
-  // Load spare parts on mount
+  // Load data on mount (with offline support)
   useEffect(() => {
     loadSpareParts();
+    loadCustomers();
   }, []);
 
   async function loadSpareParts() {
-    const { data } = await supabase
-      .from('spare_parts')
-      .select('id, name, sale_price, stock')
-      .gt('stock', 0)
-      .order('name');
-    
-    setAvailableParts(data || []);
+    try {
+      const data = await fetchAndCache<SparePart>('spare_parts');
+      // Filter parts with stock > 0
+      setAvailableParts(data.filter(p => (p.stock || 0) > 0).sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (error) {
+      console.error('Error loading spare parts:', error);
+      // Try to load from offline storage as fallback
+      const cached = await offlineStorage.getAll<SparePart>('spare_parts');
+      setAvailableParts(cached.filter(p => (p.stock || 0) > 0));
+    }
+  }
+
+  async function loadCustomers() {
+    try {
+      const data = await fetchAndCache<Customer>('customers');
+      setAllCustomers(data);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      const cached = await offlineStorage.getAll<Customer>('customers');
+      setAllCustomers(cached);
+    }
+  }
+
+  // Generate order number for offline orders
+  function generateOrderNumber(): string {
+    const now = new Date();
+    const year = now.getFullYear().toString().slice(-2);
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `ORD-${year}${month}${day}-${random}`;
   }
 
   async function handleCedulaSearch() {
@@ -117,16 +146,13 @@ export default function NewServiceOrder() {
     setSelectedCustomer(null);
 
     try {
-      const { data, error } = await (supabase
-        .from('customers') as any)
-        .select('id, cedula, name, phone')
-        .eq('cedula', cedulaSearch.trim())
-        .maybeSingle();
+      // Search in local cache first (works offline)
+      const found = allCustomers.find(
+        c => c.cedula.toLowerCase() === cedulaSearch.trim().toLowerCase()
+      );
 
-      if (error) throw error;
-
-      if (data) {
-        setSelectedCustomer(data);
+      if (found) {
+        setSelectedCustomer(found);
       } else {
         setCustomerNotFound(true);
       }
@@ -243,100 +269,91 @@ export default function NewServiceOrder() {
     try {
       let customerId = selectedCustomer?.id;
 
-      // Create customer if new
+      // Create customer if new (with offline support)
       if (!customerId && customerNotFound) {
-        const { data: newCust, error: custError } = await (supabase
-          .from('customers') as any)
-          .insert({
-            cedula: cedulaSearch.trim(),
-            name: newCustomer.name.trim(),
-            phone: newCustomer.phone.trim(),
-          })
-          .select()
-          .single();
-
-        if (custError) throw custError;
+        const newCust = await insertWithSync<Customer>('customers', {
+          cedula: cedulaSearch.trim(),
+          name: newCustomer.name.trim(),
+          phone: newCustomer.phone.trim(),
+        } as any);
         customerId = newCust.id;
       }
 
       // Calculate labor if total > subtotal
       const advancePayment = parseFloat(budget.advance) || 0;
+      const orderNumber = generateOrderNumber();
 
-      // Create order
-      const { data: order, error: orderError } = await (supabase
-        .from('service_orders') as any)
-        .insert({
-          customer_id: customerId,
-          technician_id: currentTechnicianId || null,
-          device_brand: deviceData.brand.trim() || 'Sin marca',
-          device_model: deviceData.model.trim(),
-          device_color: deviceData.color.trim() || null,
-          device_imei: deviceData.imei.trim() || null,
-          unlock_pattern: deviceData.pattern.trim() || null,
-          unlock_pin: deviceData.pin.trim() || null,
-          account_password: deviceData.accountPassword.trim() || null,
-          reported_issue: diagnosis.issue.trim(),
-          aesthetic_notes: diagnosis.aesthetic.trim() || null,
-          initial_budget: 0, // We'll use labor as additional cost instead
-          total_paid: advancePayment,
-          warranty_days: parseInt(budget.warrantyDays),
-          status: 'pending',
-        })
-        .select()
-        .single();
+      // Create order (with offline support)
+      const order = await insertWithSync('service_orders', {
+        order_number: orderNumber,
+        customer_id: customerId,
+        technician_id: currentTechnicianId || null,
+        device_brand: deviceData.brand.trim() || 'Sin marca',
+        device_model: deviceData.model.trim(),
+        device_color: deviceData.color.trim() || null,
+        device_imei: deviceData.imei.trim() || null,
+        unlock_pattern: deviceData.pattern.trim() || null,
+        unlock_pin: deviceData.pin.trim() || null,
+        account_password: deviceData.accountPassword.trim() || null,
+        reported_issue: diagnosis.issue.trim(),
+        aesthetic_notes: diagnosis.aesthetic.trim() || null,
+        initial_budget: 0,
+        total_paid: advancePayment,
+        warranty_days: parseInt(budget.warrantyDays),
+        status: 'pending',
+      } as any);
 
-      if (orderError) throw orderError;
-
-      // Add spare parts usage and update stock
+      // Add spare parts usage and update stock (with offline support)
       for (const part of selectedParts) {
-        await supabase.from('spare_parts_usage').insert({
+        await insertWithSync('spare_parts_usage', {
           order_id: order.id,
           spare_part_id: part.partId,
           quantity: part.quantity,
           unit_price: part.unitPrice,
-        });
+        } as any);
 
-        // Decrease stock
+        // Decrease stock locally
         const availPart = availableParts.find(p => p.id === part.partId);
         if (availPart) {
-          await supabase
-            .from('spare_parts')
-            .update({ stock: availPart.stock - part.quantity })
-            .eq('id', part.partId);
+          await updateWithSync('spare_parts', {
+            ...availPart,
+            stock: availPart.stock - part.quantity,
+          } as any);
         }
       }
 
-      // Add additional costs
+      // Add additional costs (with offline support)
       for (const cost of additionalCosts) {
-        await supabase.from('order_additional_costs').insert({
+        await insertWithSync('order_additional_costs', {
           order_id: order.id,
           description: cost.description,
           amount: cost.amount,
-        });
+        } as any);
       }
 
       // Add labor as additional cost if there's a difference
       if (laborAmount > 0) {
-        await supabase.from('order_additional_costs').insert({
+        await insertWithSync('order_additional_costs', {
           order_id: order.id,
           description: 'Mano de obra',
           amount: laborAmount,
-        });
+        } as any);
       }
 
-      // Create initial payment if advance > 0
+      // Create initial payment if advance > 0 (with offline support)
       if (advancePayment > 0) {
-        await (supabase.from('order_payments') as any).insert({
+        await insertWithSync('order_payments', {
           order_id: order.id,
           amount: advancePayment,
           payment_method: 'efectivo',
           notes: 'Abono inicial',
-        });
+        } as any);
       }
 
+      const offlineMsg = !isOnline ? ' (se sincronizará cuando haya conexión)' : '';
       toast({
         title: 'Orden creada',
-        description: `Orden ${order.order_number} creada exitosamente`,
+        description: `Orden ${orderNumber} creada exitosamente${offlineMsg}`,
       });
 
       navigate('/ordenes');
@@ -360,10 +377,18 @@ export default function NewServiceOrder() {
           <Button variant="ghost" size="icon" onClick={() => navigate('/ordenes')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Nueva Orden de Servicio</h1>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-foreground">Nueva Orden de Servicio</h1>
+              {!isOnline && (
+                <Badge variant="outline" className="gap-1 bg-warning/10 text-warning border-warning/30">
+                  <WifiOff className="w-3 h-3" />
+                  Sin conexión
+                </Badge>
+              )}
+            </div>
             <p className="text-muted-foreground mt-1">
-              Registra un nuevo equipo para reparación
+              {isOnline ? 'Registra un nuevo equipo para reparación' : 'Los datos se sincronizarán cuando vuelva la conexión'}
             </p>
           </div>
         </div>

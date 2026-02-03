@@ -1,11 +1,18 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
+import { 
+  saveSessionOffline, 
+  getOfflineSession, 
+  clearOfflineSession,
+  getOfflineTechnicianId 
+} from './useOfflineAuth';
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isOfflineMode: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -27,6 +34,7 @@ export function useAuthState() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentTechnicianId, setCurrentTechnicianId] = useState<string | null>(null);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   function clearSupabaseAuthStorage() {
     // If the stored session gets corrupted, supabase-js may throw while reading it.
@@ -71,10 +79,11 @@ export function useAuthState() {
       if (mounted) setLoading(value);
     };
 
-    const safeSetUserSession = (nextSession: Session | null) => {
+    const safeSetUserSession = (nextSession: Session | null, offline = false) => {
       if (!mounted) return;
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      setIsOfflineMode(offline);
     };
 
     // Initialize auth
@@ -84,7 +93,15 @@ export function useAuthState() {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
           async (_event, session) => {
             if (!mounted) return;
-            safeSetUserSession(session);
+            
+            // Save session for offline use when online
+            if (session?.user) {
+              saveSessionOffline(session, session.user);
+            } else {
+              clearOfflineSession();
+            }
+            
+            safeSetUserSession(session, false);
             safeSetLoading(false);
 
             if (session?.user) {
@@ -107,22 +124,44 @@ export function useAuthState() {
         
         if (!mounted) return;
         
-        safeSetUserSession(session);
-        safeSetLoading(false);
-
         if (session?.user) {
+          // Online with valid session - save for offline
+          saveSessionOffline(session, session.user);
+          safeSetUserSession(session, false);
           loadTechnicianIdForUser(session.user.id);
         } else {
-          setCurrentTechnicianId(null);
+          // No online session - check for offline session
+          const offlineSession = getOfflineSession();
+          if (offlineSession && !navigator.onLine) {
+            // Use offline session
+            safeSetUserSession(offlineSession.session, true);
+            const offlineTechId = await getOfflineTechnicianId(offlineSession.user.id);
+            if (mounted) setCurrentTechnicianId(offlineTechId);
+          } else {
+            safeSetUserSession(null, false);
+            setCurrentTechnicianId(null);
+          }
         }
+        
+        safeSetLoading(false);
       } catch (err) {
         console.error('Error loading auth session:', err);
-        // Fix common case: corrupt stored session -> infinite spinner
-        clearSupabaseAuthStorage();
-        if (mounted) {
-          safeSetUserSession(null);
-          setCurrentTechnicianId(null);
+        
+        // Try offline session as fallback
+        const offlineSession = getOfflineSession();
+        if (offlineSession) {
+          safeSetUserSession(offlineSession.session, true);
+          const offlineTechId = await getOfflineTechnicianId(offlineSession.user.id);
+          if (mounted) setCurrentTechnicianId(offlineTechId);
           safeSetLoading(false);
+        } else {
+          // Fix common case: corrupt stored session -> infinite spinner
+          clearSupabaseAuthStorage();
+          if (mounted) {
+            safeSetUserSession(null, false);
+            setCurrentTechnicianId(null);
+            safeSetLoading(false);
+          }
         }
       }
     };
@@ -155,6 +194,7 @@ export function useAuthState() {
   };
 
   const signOut = async () => {
+    clearOfflineSession();
     await supabase.auth.signOut();
   };
 
@@ -162,6 +202,7 @@ export function useAuthState() {
     user,
     session,
     loading,
+    isOfflineMode,
     signIn,
     signUp,
     signOut,

@@ -7,6 +7,11 @@ import { useToast } from '@/hooks/use-toast';
 // Helper to bypass TypeScript's strict table checking
 const db = supabase as any;
 
+interface ConflictResult {
+  resolved: number;
+  discarded: number;
+}
+
 export function useOfflineSync() {
   const isOnline = useOnlineStatus();
   const [syncing, setSyncing] = useState(false);
@@ -23,38 +28,107 @@ export function useOfflineSync() {
     }
   }, []);
 
-  // Sync pending changes to Supabase
-  const syncToServer = useCallback(async () => {
-    if (!isOnline || syncing) return;
+  // Compare timestamps for conflict resolution
+  const resolveConflict = useCallback(async (
+    table: string,
+    localData: any,
+    localUpdatedAt: string
+  ): Promise<'local' | 'server' | 'no-conflict'> => {
+    try {
+      const { data: serverData, error } = await db
+        .from(table)
+        .select('updated_at')
+        .eq('id', localData.id)
+        .maybeSingle();
+
+      if (error || !serverData) {
+        // Record doesn't exist on server, local wins
+        return 'local';
+      }
+
+      const serverUpdatedAt = new Date(serverData.updated_at).getTime();
+      const localUpdatedAtTime = new Date(localUpdatedAt).getTime();
+
+      // Most recent wins
+      return localUpdatedAtTime > serverUpdatedAt ? 'local' : 'server';
+    } catch {
+      return 'local'; // Default to local on error
+    }
+  }, []);
+
+  // Sync pending changes to Supabase with conflict resolution
+  const syncToServer = useCallback(async (): Promise<ConflictResult> => {
+    if (!isOnline || syncing) return { resolved: 0, discarded: 0 };
 
     setSyncing(true);
+    const result: ConflictResult = { resolved: 0, discarded: 0 };
+
     try {
       const queue = await offlineStorage.getSyncQueue();
       
       if (queue.length === 0) {
         setSyncing(false);
-        return;
+        return result;
       }
-
-      let successCount = 0;
-      let errorCount = 0;
 
       for (const item of queue) {
         try {
           const tableName = item.table;
           
           if (item.action === 'insert') {
-            const { error } = await db
+            // Check if record already exists (from another device)
+            const { data: existing } = await db
               .from(tableName)
-              .insert(item.data);
-            if (error) throw error;
+              .select('id')
+              .eq('id', item.data.id)
+              .maybeSingle();
+
+            if (existing) {
+              // Record exists, check conflict
+              const winner = await resolveConflict(tableName, item.data, item.updated_at);
+              if (winner === 'server') {
+                // Server wins, discard local insert
+                await offlineStorage.removeSyncQueueItem(item.id);
+                result.discarded++;
+                continue;
+              }
+              // Local wins, update instead of insert
+              const { id, ...updateData } = item.data;
+              await db.from(tableName).update(updateData).eq('id', id);
+            } else {
+              // No conflict, insert normally
+              const { error } = await db.from(tableName).insert(item.data);
+              if (error) throw error;
+            }
+            result.resolved++;
           } else if (item.action === 'update') {
-            const { id, ...updateData } = item.data;
-            const { error } = await db
-              .from(tableName)
-              .update(updateData)
-              .eq('id', id);
-            if (error) throw error;
+            // Check for conflicts
+            const winner = await resolveConflict(tableName, item.data, item.updated_at);
+            
+            if (winner === 'server') {
+              // Server has newer data, discard local update
+              // Also update local cache with server data
+              const { data: serverData } = await db
+                .from(tableName)
+                .select('*')
+                .eq('id', item.data.id)
+                .single();
+              
+              if (serverData) {
+                await offlineStorage.put(tableName, serverData);
+              }
+              
+              result.discarded++;
+            } else {
+              // Local wins, apply update
+              const { id, ...updateData } = item.data;
+              const { error } = await db
+                .from(tableName)
+                .update(updateData)
+                .eq('id', id);
+              if (error) throw error;
+              result.resolved++;
+            }
           } else if (item.action === 'delete') {
             const { error } = await db
               .from(tableName)
@@ -62,22 +136,25 @@ export function useOfflineSync() {
               .eq('id', item.data.id);
             // Ignore "not found" errors for deletes
             if (error && !error.message.includes('not found')) throw error;
+            result.resolved++;
           }
 
           await offlineStorage.removeSyncQueueItem(item.id);
-          successCount++;
         } catch (error) {
           console.error(`Error syncing item ${item.id}:`, error);
-          errorCount++;
         }
       }
 
       await updatePendingCount();
 
-      if (successCount > 0) {
+      if (result.resolved > 0 || result.discarded > 0) {
+        let description = `${result.resolved} cambio(s) sincronizado(s)`;
+        if (result.discarded > 0) {
+          description += `, ${result.discarded} conflicto(s) resuelto(s)`;
+        }
         toast({
           title: 'Sincronización completada',
-          description: `${successCount} cambio(s) sincronizado(s)${errorCount > 0 ? `, ${errorCount} error(es)` : ''}`,
+          description,
         });
       }
     } catch (error) {
@@ -85,10 +162,23 @@ export function useOfflineSync() {
     } finally {
       setSyncing(false);
     }
-  }, [isOnline, syncing, toast, updatePendingCount]);
+
+    return result;
+  }, [isOnline, syncing, toast, updatePendingCount, resolveConflict]);
 
   // Fetch data from server and cache locally
-  const fetchAndCache = useCallback(async <T>(table: string): Promise<T[]> => {
+  const fetchAndCache = useCallback(async <T>(
+    table: string,
+    options?: { 
+      select?: string;
+      orderBy?: string;
+      limit?: number;
+    }
+  ): Promise<T[]> => {
+    const select = options?.select || '*';
+    const orderBy = options?.orderBy || 'created_at';
+    const limit = options?.limit || 500;
+
     if (!isOnline) {
       // Return cached data when offline
       return offlineStorage.getAll<T>(table);
@@ -97,8 +187,9 @@ export function useOfflineSync() {
     try {
       const { data, error } = await db
         .from(table)
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select(select)
+        .order(orderBy, { ascending: false })
+        .limit(limit);
 
       if (error) throw error;
 
@@ -123,7 +214,13 @@ export function useOfflineSync() {
     data: T
   ): Promise<T> => {
     const id = data.id || crypto.randomUUID();
-    const itemWithId = { ...data, id, created_at: new Date().toISOString() } as T & { id: string };
+    const now = new Date().toISOString();
+    const itemWithId = { 
+      ...data, 
+      id, 
+      created_at: now,
+      updated_at: now,
+    } as T & { id: string };
 
     // Always save locally first
     await offlineStorage.put(table, itemWithId);
