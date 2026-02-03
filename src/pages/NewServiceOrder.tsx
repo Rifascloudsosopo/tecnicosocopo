@@ -297,7 +297,7 @@ export default function NewServiceOrder() {
         account_password: deviceData.accountPassword.trim() || null,
         reported_issue: diagnosis.issue.trim(),
         aesthetic_notes: diagnosis.aesthetic.trim() || null,
-        initial_budget: totalToCharge,
+        initial_budget: 0,
         total_paid: advancePayment,
         warranty_days: parseInt(budget.warrantyDays),
         status: 'pending',
@@ -331,13 +331,18 @@ export default function NewServiceOrder() {
         } as any);
       }
 
-      // Add labor as additional cost if there's a difference
-      if (laborAmount > 0) {
-        await insertWithSync('order_additional_costs', {
-          order_id: order.id,
-          description: 'Mano de obra',
-          amount: laborAmount,
-        } as any);
+      // Add labor/service charge as additional cost
+      // If user set a total amount and there's a difference from parts+costs, add as labor
+      // If user set a total amount with no parts/costs, add the full amount as labor
+      if (hasExplicitTotal && totalToCharge > 0) {
+        const laborToAdd = totalToCharge - partsTotal - costsTotal;
+        if (laborToAdd > 0) {
+          await insertWithSync('order_additional_costs', {
+            order_id: order.id,
+            description: 'Mano de obra',
+            amount: laborToAdd,
+          } as any);
+        }
       }
 
       // Create initial payment if advance > 0 (with offline support)
