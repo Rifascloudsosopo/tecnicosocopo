@@ -297,7 +297,7 @@ export default function NewServiceOrder() {
         account_password: deviceData.accountPassword.trim() || null,
         reported_issue: diagnosis.issue.trim(),
         aesthetic_notes: diagnosis.aesthetic.trim() || null,
-        initial_budget: 0,
+        initial_budget: totalToCharge,
         total_paid: advancePayment,
         warranty_days: parseInt(budget.warrantyDays),
         status: 'pending',
