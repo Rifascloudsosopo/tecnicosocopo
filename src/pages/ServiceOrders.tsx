@@ -12,10 +12,21 @@ import {
   DollarSign,
   CreditCard,
   CloudOff,
+  Trash2,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import {
   Select,
@@ -111,6 +122,11 @@ export default function ServiceOrders() {
     currentStatus: string;
     newStatus: string;
   }>({ open: false, orderId: '', currentStatus: '', newStatus: '' });
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    orderId: string;
+    orderNumber: string;
+  }>({ open: false, orderId: '', orderNumber: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
   const { toast } = useToast();
@@ -341,6 +357,41 @@ export default function ServiceOrders() {
     }
   }
 
+  async function handleDeleteOrder() {
+    const { orderId, orderNumber } = deleteDialog;
+    setDeleteDialog({ ...deleteDialog, open: false });
+
+    try {
+      if (isOnline) {
+        // Delete related records first (cascade)
+        await (supabase.from('spare_parts_usage') as any).delete().eq('order_id', orderId);
+        await (supabase.from('order_additional_costs') as any).delete().eq('order_id', orderId);
+        await (supabase.from('order_payments') as any).delete().eq('order_id', orderId);
+        
+        const { error } = await (supabase.from('service_orders') as any)
+          .delete()
+          .eq('id', orderId);
+
+        if (error) throw error;
+      } else {
+        // Offline: delete from local storage
+        await offlineStorage.delete('service_orders', orderId);
+      }
+
+      setOrders(orders.filter(o => o.id !== orderId));
+      toast({ 
+        title: 'Orden eliminada',
+        description: `La orden ${orderNumber} ha sido eliminada`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error al eliminar',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  }
+
   function toggleExpand(orderId: string) {
     setExpandedOrders(prev => {
       const next = new Set(prev);
@@ -437,6 +488,21 @@ export default function ServiceOrders() {
                 <SelectItem value="abandoned">Abandonado</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Delete Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => setDeleteDialog({
+                open: true,
+                orderId: order.id,
+                orderNumber: order.order_number,
+              })}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Eliminar
+            </Button>
 
             <div className="flex gap-2 flex-wrap">
               <Button
@@ -729,6 +795,19 @@ export default function ServiceOrders() {
                               >
                                 <Printer className="w-3.5 h-3.5" />
                               </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                title="Eliminar orden"
+                                onClick={() => setDeleteDialog({
+                                  open: true,
+                                  orderId: order.id,
+                                  orderNumber: order.order_number,
+                                })}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
                             </div>
                           </td>
                         </tr>
@@ -807,6 +886,33 @@ export default function ServiceOrders() {
                   )}
                 </div>
               </div>
+
+              {/* Security Info (PIN, Pattern, Password) */}
+              {(selectedOrder.unlock_pin || selectedOrder.unlock_pattern || selectedOrder.account_password) && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium mb-2">Información de Acceso</h4>
+                  <div className="grid grid-cols-1 gap-2 text-sm">
+                    {selectedOrder.unlock_pin && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">PIN de desbloqueo:</span>
+                        <span className="font-medium font-mono">{selectedOrder.unlock_pin}</span>
+                      </div>
+                    )}
+                    {selectedOrder.unlock_pattern && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Patrón de desbloqueo:</span>
+                        <span className="font-medium font-mono">{selectedOrder.unlock_pattern}</span>
+                      </div>
+                    )}
+                    {selectedOrder.account_password && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Contraseña iCloud/Google:</span>
+                        <span className="font-medium font-mono">{selectedOrder.account_password}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Issue */}
               <div className="p-4 bg-muted/50 rounded-lg">
@@ -1016,6 +1122,28 @@ export default function ServiceOrders() {
         pendingAmount={paymentDialog.pendingAmount}
         onPaymentComplete={loadOrders}
       />
+
+      {/* Delete Order Confirmation Dialog */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar orden {deleteDialog.orderNumber}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán permanentemente la orden, 
+              los repuestos utilizados, costos adicionales y pagos registrados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteOrder}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </MainLayout>
   );
 }

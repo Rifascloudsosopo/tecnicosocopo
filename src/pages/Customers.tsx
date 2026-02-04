@@ -349,86 +349,100 @@ export default function Customers() {
           </div>
         ) : (
           <>
-            {/* Customers Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-              {paginatedCustomers.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="glass-card rounded-xl p-4 md:p-5 hover:shadow-xl transition-all duration-300"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-lg text-foreground truncate">{customer.name}</h3>
-                      <p className="text-sm text-primary font-medium">{customer.cedula}</p>
-                    </div>
-                    <div className="flex gap-1 ml-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleEdit(customer)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(customer)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{customer.phone}</span>
-                    </div>
-                    {customer.email && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Mail className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{customer.email}</span>
-                      </div>
-                    )}
-                    {customer.address && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <MapPin className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{customer.address}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <History className="w-4 h-4" />
-                      <span className="text-xs sm:text-sm">
-                        {new Date(customer.created_at).toLocaleDateString('es-ES')}
-                      </span>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={() => loadCustomerHistory(customer)}
-                      className="gap-1"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span className="hidden sm:inline">Historial</span>
-                    </Button>
-                  </div>
-                </div>
-              ))}
+            {/* Customers Table - Compact List */}
+            <div className="glass-card rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="table-header">
+                      <th className="px-3 py-2 text-left text-xs">Cédula</th>
+                      <th className="px-3 py-2 text-left text-xs">Nombre</th>
+                      <th className="px-3 py-2 text-left text-xs">Teléfono</th>
+                      <th className="px-3 py-2 text-left text-xs hidden md:table-cell">Email</th>
+                      <th className="px-3 py-2 text-left text-xs hidden lg:table-cell">Dirección</th>
+                      <th className="px-3 py-2 text-left text-xs hidden sm:table-cell">Registro</th>
+                      <th className="px-3 py-2 text-center text-xs">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {paginatedCustomers.map((customer) => (
+                      <tr key={customer.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-3 py-2">
+                          <span className="font-medium text-primary text-sm">{customer.cedula}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="font-medium text-foreground text-sm">{customer.name}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <a href={`tel:${customer.phone}`} className="text-sm text-muted-foreground hover:text-primary">
+                            {customer.phone}
+                          </a>
+                        </td>
+                        <td className="px-3 py-2 hidden md:table-cell">
+                          {customer.email ? (
+                            <a href={`mailto:${customer.email}`} className="text-sm text-muted-foreground hover:text-primary truncate max-w-[150px] block">
+                              {customer.email}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/50">-</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 hidden lg:table-cell">
+                          <span className="text-sm text-muted-foreground truncate max-w-[150px] block" title={customer.address || ''}>
+                            {customer.address || '-'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 hidden sm:table-cell">
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(customer.created_at).toLocaleDateString('es-ES')}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-center gap-0.5">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              title="Ver historial"
+                              onClick={() => loadCustomerHistory(customer)}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              title="Editar"
+                              onClick={() => handleEdit(customer)}
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              title="Eliminar"
+                              onClick={() => handleDelete(customer)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Pagination */}
+              <SimplePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                totalItems={filteredCustomers.length}
+                itemsPerPage={itemsPerPage}
+              />
             </div>
-
-            {/* Pagination */}
-            <SimplePagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-              totalItems={filteredCustomers.length}
-              itemsPerPage={itemsPerPage}
-            />
 
             {filteredCustomers.length === 0 && !loading && (
               <div className="text-center py-12">
