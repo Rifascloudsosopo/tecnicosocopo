@@ -590,8 +590,8 @@ export default function NewServiceOrder() {
                     <Label htmlFor="pin">PIN</Label>
                     <Input
                       id="pin"
-                      type="password"
-                      placeholder="****"
+                      type="text"
+                      placeholder="1234"
                       value={deviceData.pin}
                       onChange={(e) => setDeviceData({ ...deviceData, pin: e.target.value })}
                       className="mt-1.5"
@@ -601,8 +601,8 @@ export default function NewServiceOrder() {
                     <Label htmlFor="account">Contraseña iCloud/Google</Label>
                     <Input
                       id="account"
-                      type="password"
-                      placeholder="********"
+                      type="text"
+                      placeholder="contraseña123"
                       value={deviceData.accountPassword}
                       onChange={(e) => setDeviceData({ ...deviceData, accountPassword: e.target.value })}
                       className="mt-1.5"
