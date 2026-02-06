@@ -15,23 +15,29 @@ class OfflineStorage {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<void> | null = null;
 
-  async init(): Promise<void> {
-    if (this.db) return;
-    if (this.initPromise) return this.initPromise;
-
-    this.initPromise = new Promise((resolve, reject) => {
+  private async openDB(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
+        const db = request.result;
+        // Listen for close events to reset state
+        db.onclose = () => {
+          this.db = null;
+          this.initPromise = null;
+        };
+        db.onversionchange = () => {
+          db.close();
+          this.db = null;
+          this.initPromise = null;
+        };
+        resolve(db);
       };
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
 
-        // Create stores for each table
         const tables = ['customers', 'service_orders', 'technicians', 'spare_parts', 'order_payments', 'order_additional_costs', 'spare_parts_usage', 'whatsapp_templates', 'company_settings'];
         
         tables.forEach(table => {
@@ -40,12 +46,35 @@ class OfflineStorage {
           }
         });
 
-        // Sync queue for pending changes
         if (!db.objectStoreNames.contains('sync_queue')) {
           const syncStore = db.createObjectStore('sync_queue', { keyPath: 'id' });
           syncStore.createIndex('timestamp', 'timestamp', { unique: false });
         }
       };
+    });
+  }
+
+  async init(): Promise<void> {
+    // If db exists, verify it's still usable
+    if (this.db) {
+      try {
+        // Quick check: try to start a transaction to see if connection is alive
+        this.db.transaction('customers', 'readonly');
+        return;
+      } catch {
+        // Connection is dead, reset and reconnect
+        this.db = null;
+        this.initPromise = null;
+      }
+    }
+
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = this.openDB().then(db => {
+      this.db = db;
+    }).catch(err => {
+      this.initPromise = null;
+      throw err;
     });
 
     return this.initPromise;
