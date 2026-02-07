@@ -51,10 +51,13 @@ export function useDataPreloader() {
           // Use related data query if available
           const selectQuery = RELATED_DATA[table as keyof typeof RELATED_DATA] || '*';
           
+          // company_settings doesn't have created_at, use updated_at instead
+          const orderColumn = table === 'company_settings' ? 'updated_at' : 'created_at';
+          
           const { data, error } = await db
             .from(table)
             .select(selectQuery)
-            .order('created_at', { ascending: false })
+            .order(orderColumn, { ascending: false })
             .limit(500); // Limit to prevent huge downloads
 
           if (error) {

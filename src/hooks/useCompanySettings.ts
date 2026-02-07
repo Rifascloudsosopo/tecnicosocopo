@@ -52,29 +52,33 @@ export function useCompanySettings() {
         return data as CompanySettings;
       }
 
-      // Create default settings if none exist (use upsert to avoid duplicates)
-      const { data: newData, error: insertError } = await (supabase
-        .from('company_settings') as any)
-        .upsert(defaultSettings, { onConflict: 'id' })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-      return newData as CompanySettings;
+      // No settings exist — return defaults with a placeholder ID.
+      // The first save will create the row via upsert.
+      return { id: '', ...defaultSettings } as CompanySettings;
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   const updateMutation = useMutation({
     mutationFn: async (updates: Partial<CompanySettings>) => {
-      if (!query.data?.id) throw new Error('No settings ID');
+      if (!query.data) throw new Error('No settings loaded');
       
-      const { error } = await (supabase
-        .from('company_settings') as any)
-        .update(updates)
-        .eq('id', query.data.id);
-
-      if (error) throw error;
+      if (!query.data.id || query.data.id === '') {
+        // First save — insert a new row
+        const { error } = await (supabase
+          .from('company_settings') as any)
+          .insert({ ...defaultSettings, ...updates })
+          .select()
+          .single();
+        if (error) throw error;
+      } else {
+        // Normal update
+        const { error } = await (supabase
+          .from('company_settings') as any)
+          .update(updates)
+          .eq('id', query.data.id);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['company-settings'] });
