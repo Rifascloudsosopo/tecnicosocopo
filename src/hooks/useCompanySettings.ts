@@ -52,10 +52,10 @@ export function useCompanySettings() {
         return data as CompanySettings;
       }
 
-      // Create default settings if none exist
+      // Create default settings if none exist (use upsert to avoid duplicates)
       const { data: newData, error: insertError } = await (supabase
         .from('company_settings') as any)
-        .insert(defaultSettings)
+        .upsert(defaultSettings, { onConflict: 'id' })
         .select()
         .single();
 
