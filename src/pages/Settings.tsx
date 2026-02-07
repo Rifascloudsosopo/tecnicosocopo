@@ -63,26 +63,11 @@ export default function Settings() {
     terms_conditions: '',
   });
 
-  // Sync form data when settings load
-  useState(() => {
-    if (settings) {
-      setFormData({
-        name: settings.name || '',
-        rif: settings.rif || '',
-        address: settings.address || '',
-        phone: settings.phone || '',
-        email: settings.email || '',
-        logo_url: settings.logo_url || '',
-        default_warranty_days: String(settings.default_warranty_days || 30),
-        abandonment_days: String(settings.abandonment_days || 90),
-        printer_size: (settings as any).printer_size || '80mm',
-        terms_conditions: settings.terms_conditions || '',
-      });
-    }
-  });
+  // Track if form has been initialized from settings
+  const [formInitialized, setFormInitialized] = useState(false);
 
-  // Update form when settings change
-  if (settings && formData.name === '' && settings.name) {
+  // Sync form data when settings load (only once)
+  if (settings && !formInitialized) {
     setFormData({
       name: settings.name || '',
       rif: settings.rif || '',
@@ -95,6 +80,7 @@ export default function Settings() {
       printer_size: (settings as any).printer_size || '80mm',
       terms_conditions: settings.terms_conditions || '',
     });
+    setFormInitialized(true);
   }
 
   async function handleSave() {
