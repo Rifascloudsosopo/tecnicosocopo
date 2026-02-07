@@ -14,8 +14,6 @@ const TABLES_WITH_CREATED_AT = new Set([
   'activity_logs',
   'customers',
   'inventory_categories',
-  'order_additional_costs',
-  'order_payments',
   'profiles',
   'service_orders',
   'spare_parts',
@@ -24,6 +22,9 @@ const TABLES_WITH_CREATED_AT = new Set([
   'technician_permissions',
   'whatsapp_templates',
 ]);
+// NOTE: order_additional_costs and order_payments only have created_at but NO updated_at.
+// They are intentionally excluded from TABLES_WITH_CREATED_AT for sync inserts
+// because their created_at has a server default and sending it can cause conflicts.
 
 const TABLES_WITH_UPDATED_AT = new Set([
   'company_settings',
@@ -101,21 +102,33 @@ export function useOfflineSync() {
         return result;
       }
 
+      // Track retry counts to avoid infinite loops
+      const failedItems: string[] = [];
+
       for (const item of queue) {
         try {
           const tableName = item.table;
           
+          // Strip out fields that don't exist on the target table
+          const cleanData = { ...item.data };
+          if (!TABLES_WITH_UPDATED_AT.has(tableName)) {
+            delete cleanData.updated_at;
+          }
+          if (!TABLES_WITH_CREATED_AT.has(tableName)) {
+            delete cleanData.created_at;
+          }
+
           if (item.action === 'insert') {
             // Check if record already exists (from another device)
             const { data: existing } = await db
               .from(tableName)
               .select('id')
-              .eq('id', item.data.id)
+              .eq('id', cleanData.id)
               .maybeSingle();
 
             if (existing) {
               // Record exists, check conflict
-              const winner = await resolveConflict(tableName, item.data, item.updated_at);
+              const winner = await resolveConflict(tableName, cleanData, item.updated_at);
               if (winner === 'server') {
                 // Server wins, discard local insert
                 await offlineStorage.removeSyncQueueItem(item.id);
@@ -123,17 +136,17 @@ export function useOfflineSync() {
                 continue;
               }
               // Local wins, update instead of insert
-              const { id, ...updateData } = item.data;
+              const { id, ...updateData } = cleanData;
               await db.from(tableName).update(updateData).eq('id', id);
             } else {
               // No conflict, insert normally
-              const { error } = await db.from(tableName).insert(item.data);
+              const { error } = await db.from(tableName).insert(cleanData);
               if (error) throw error;
             }
             result.resolved++;
           } else if (item.action === 'update') {
             // Check for conflicts
-            const winner = await resolveConflict(tableName, item.data, item.updated_at);
+            const winner = await resolveConflict(tableName, cleanData, item.updated_at);
             
             if (winner === 'server') {
               // Server has newer data, discard local update
@@ -141,7 +154,7 @@ export function useOfflineSync() {
               const { data: serverData } = await db
                 .from(tableName)
                 .select('*')
-                .eq('id', item.data.id)
+                .eq('id', cleanData.id)
                 .single();
               
               if (serverData) {
@@ -151,7 +164,7 @@ export function useOfflineSync() {
               result.discarded++;
             } else {
               // Local wins, apply update
-              const { id, ...updateData } = item.data;
+              const { id, ...updateData } = cleanData;
               const { error } = await db
                 .from(tableName)
                 .update(updateData)
@@ -163,7 +176,7 @@ export function useOfflineSync() {
             const { error } = await db
               .from(tableName)
               .delete()
-              .eq('id', item.data.id);
+              .eq('id', cleanData.id);
             // Ignore "not found" errors for deletes
             if (error && !error.message.includes('not found')) throw error;
             result.resolved++;
@@ -172,6 +185,21 @@ export function useOfflineSync() {
           await offlineStorage.removeSyncQueueItem(item.id);
         } catch (error) {
           console.error(`Error syncing item ${item.id}:`, error);
+          failedItems.push(item.id);
+        }
+      }
+
+      // Remove permanently failed items (items that existed before this sync and still fail)
+      // to prevent infinite retry loops
+      if (failedItems.length > 0) {
+        const remainingQueue = await offlineStorage.getSyncQueue();
+        for (const failedId of failedItems) {
+          const failedItem = remainingQueue.find(q => q.id === failedId);
+          if (failedItem && Date.now() - failedItem.timestamp > 24 * 60 * 60 * 1000) {
+            // Item has been failing for over 24 hours, remove it
+            console.warn(`Removing stuck sync item ${failedId} (table: ${failedItem.table}, action: ${failedItem.action})`);
+            await offlineStorage.removeSyncQueueItem(failedId);
+          }
         }
       }
 
@@ -206,6 +234,7 @@ export function useOfflineSync() {
     }
   ): Promise<T[]> => {
     const select = options?.select || '*';
+    // Default to created_at but allow override (e.g. company_settings uses updated_at)
     const orderBy = options?.orderBy || 'created_at';
     const limit = options?.limit || 500;
 
