@@ -4,6 +4,7 @@ import {
   Plus,
   Filter,
   Eye,
+  Pencil,
   MessageCircle,
   Printer,
   Loader2,
@@ -41,7 +42,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
-import { useWhatsAppTemplates, openWhatsAppWithTemplate } from '@/hooks/useWhatsAppTemplates';
+import { useWhatsAppTemplates, buildWhatsAppMessage, formatPhoneForWhatsApp } from '@/hooks/useWhatsAppTemplates';
 import { printTicket } from '@/lib/printTicket';
 import { StatusChangeDialog } from '@/components/orders/StatusChangeDialog';
 import { OrderCostsManager } from '@/components/orders/OrderCostsManager';
@@ -248,6 +249,17 @@ export default function ServiceOrders() {
     setCurrentPage(1);
   }, [statusFilter]);
 
+  function formatPhoneForWhatsApp(phone: string): string {
+    let clean = phone.replace(/[^0-9+]/g, '');
+    // Remove leading + if present
+    if (clean.startsWith('+')) clean = clean.slice(1);
+    // If it starts with 0, assume Venezuela and replace with 58
+    if (clean.startsWith('0')) clean = '58' + clean.slice(1);
+    // If it doesn't start with a country code (less than 11 digits), prepend 58
+    if (clean.length <= 10) clean = '58' + clean;
+    return clean;
+  }
+
   function handleWhatsApp(order: ServiceOrder) {
     if (!order.customers?.phone) return;
 
@@ -256,18 +268,17 @@ export default function ServiceOrders() {
     const companyName = settings?.name || 'Taller Técnico';
 
     if (template) {
-      // Use template from database
-      openWhatsAppWithTemplate(
-        order.customers.phone,
-        template,
-        order,
-        companyName
-      );
+      const cleanPhone = formatPhoneForWhatsApp(order.customers.phone);
+      const message = buildWhatsAppMessage(template, order, companyName);
+      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
     } else {
       // Fallback message if no template found
-      const pendingAmount = order.initial_budget - order.total_paid;
+      const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
+      const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
+      const orderTotal = order.initial_budget + partsTotal + costsTotal;
+      const pendingAmount = Math.round((orderTotal - order.total_paid) * 100) / 100;
       const message = `Hola ${order.customers.name}, le escribimos de ${companyName} respecto a su orden ${order.order_number}. Equipo: ${order.device_brand} ${order.device_model}. Pendiente: $${pendingAmount.toFixed(2)}`;
-      const cleanPhone = order.customers.phone.replace(/[^0-9]/g, '');
+      const cleanPhone = formatPhoneForWhatsApp(order.customers.phone);
       window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
     }
   }
@@ -286,9 +297,9 @@ export default function ServiceOrders() {
         const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
         const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
         const orderTotal = order.initial_budget + partsTotal + costsTotal;
-        const pendingAmount = orderTotal - order.total_paid;
+        const pendingAmount = Math.round((orderTotal - order.total_paid) * 100) / 100;
         
-        if (pendingAmount > 0) {
+        if (pendingAmount > 0.009) {
           toast({
             title: 'Pago pendiente',
             description: `No se puede marcar como entregado. El cliente debe $${pendingAmount.toFixed(2)} pendiente.`,
@@ -464,9 +475,9 @@ export default function ServiceOrders() {
                 const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                 const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                 const orderTotal = order.initial_budget + partsTotal + costsTotal;
-                const pendingAmount = orderTotal - order.total_paid;
+                const pendingAmount = Math.round((orderTotal - order.total_paid) * 100) / 100;
                 return (
-                  <span className={`text-sm font-semibold ${pendingAmount > 0 ? 'text-destructive' : 'text-success'}`}>
+                  <span className={`text-sm font-semibold ${pendingAmount > 0.009 ? 'text-destructive' : 'text-success'}`}>
                     ${pendingAmount.toFixed(2)}
                   </span>
                 );
@@ -514,6 +525,16 @@ export default function ServiceOrders() {
                 <Eye className="w-4 h-4 mr-1" />
                 Ver
               </Button>
+              <Link to={`/ordenes/editar/${order.id}`} className="flex-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                >
+                  <Pencil className="w-4 h-4 mr-1" />
+                  Editar
+                </Button>
+              </Link>
               <Button
                 variant="outline"
                 size="sm"
@@ -527,8 +548,8 @@ export default function ServiceOrders() {
                 const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                 const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                 const orderTotal = order.initial_budget + partsTotal + costsTotal;
-                const pendingAmount = orderTotal - order.total_paid;
-                return pendingAmount > 0 ? (
+                const pendingAmount = Math.round((orderTotal - order.total_paid) * 100) / 100;
+                return pendingAmount > 0.009 ? (
                   <Button
                     variant="outline"
                     size="sm"
@@ -725,9 +746,9 @@ export default function ServiceOrders() {
                               const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                               const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                               const orderTotal = order.initial_budget + partsTotal + costsTotal;
-                              const pendingAmount = orderTotal - order.total_paid;
+                              const pendingAmount = Math.round((orderTotal - order.total_paid) * 100) / 100;
                               return (
-                                <p className={`font-semibold text-sm ${pendingAmount > 0 ? 'text-destructive' : 'text-success'}`}>
+                                <p className={`font-semibold text-sm ${pendingAmount > 0.009 ? 'text-destructive' : 'text-success'}`}>
                                   ${pendingAmount.toFixed(2)}
                                 </p>
                               );
@@ -744,6 +765,25 @@ export default function ServiceOrders() {
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </Button>
+                              <Link to={`/ordenes/editar/${order.id}`}>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  title="Editar orden"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                              </Link>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                title="Repuestos y Costos"
+                                onClick={() => setCostsDialogOrderId(order.id)}
+                              >
+                                <DollarSign className="w-3.5 h-3.5" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -757,8 +797,8 @@ export default function ServiceOrders() {
                                 const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                                 const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
                                 const orderTotal = order.initial_budget + partsTotal + costsTotal;
-                                const pendingAmount = orderTotal - order.total_paid;
-                                return pendingAmount > 0 ? (
+                                const pendingAmount = Math.round((orderTotal - order.total_paid) * 100) / 100;
+                                return pendingAmount > 0.009 ? (
                                   <Button
                                     variant="ghost"
                                     size="icon"
