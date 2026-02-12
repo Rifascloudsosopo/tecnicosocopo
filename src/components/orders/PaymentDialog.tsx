@@ -39,7 +39,8 @@ export function PaymentDialog({
   pendingAmount,
   onPaymentComplete,
 }: PaymentDialogProps) {
-  const [amount, setAmount] = useState(pendingAmount.toFixed(2));
+  const roundedPending = Math.round(pendingAmount * 100) / 100;
+  const [amount, setAmount] = useState(roundedPending.toFixed(2));
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -58,14 +59,17 @@ export function PaymentDialog({
       return;
     }
 
-    if (paymentAmount > pendingAmount) {
+    if (paymentAmount > roundedPending + 0.01) {
       toast({
         title: 'Monto excede pendiente',
-        description: `El monto máximo a pagar es $${pendingAmount.toFixed(2)}`,
+        description: `El monto máximo a pagar es $${roundedPending.toFixed(2)}`,
         variant: 'destructive',
       });
       return;
     }
+
+    // Clamp to pending amount to avoid overpayment from rounding
+    const finalAmount = Math.min(paymentAmount, roundedPending);
 
     setSaving(true);
     try {
@@ -74,7 +78,7 @@ export function PaymentDialog({
         .from('order_payments')
         .insert({
           order_id: orderId,
-          amount: paymentAmount,
+          amount: finalAmount,
           payment_method: paymentMethod,
           notes: notes.trim() || null,
         });
@@ -90,7 +94,7 @@ export function PaymentDialog({
 
       if (fetchError) throw fetchError;
 
-      const newTotalPaid = (orderData.total_paid || 0) + paymentAmount;
+      const newTotalPaid = Math.round(((orderData.total_paid || 0) + finalAmount) * 100) / 100;
       
       const { error: updateError } = await supabase
         .from('service_orders')
@@ -101,7 +105,7 @@ export function PaymentDialog({
 
       toast({
         title: 'Pago registrado',
-        description: `Se registró un pago de $${paymentAmount.toFixed(2)} para la orden ${orderNumber}`,
+        description: `Se registró un pago de $${finalAmount.toFixed(2)} para la orden ${orderNumber}`,
       });
 
       onPaymentComplete();
@@ -120,14 +124,14 @@ export function PaymentDialog({
   }
 
   function resetForm() {
-    setAmount(pendingAmount.toFixed(2));
+    setAmount(roundedPending.toFixed(2));
     setPaymentMethod('cash');
     setNotes('');
   }
 
   function handleOpenChange(open: boolean) {
     if (open) {
-      setAmount(pendingAmount.toFixed(2));
+      setAmount(roundedPending.toFixed(2));
     }
     onOpenChange(open);
   }
@@ -146,7 +150,7 @@ export function PaymentDialog({
         <DialogHeader>
           <DialogTitle>Registrar Pago</DialogTitle>
           <DialogDescription>
-            Orden {orderNumber} - Pendiente: ${pendingAmount.toFixed(2)}
+            Orden {orderNumber} - Pendiente: ${roundedPending.toFixed(2)}
           </DialogDescription>
         </DialogHeader>
 
@@ -158,7 +162,7 @@ export function PaymentDialog({
               type="number"
               step="0.01"
               min="0.01"
-              max={pendingAmount}
+              max={roundedPending}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               required
@@ -168,7 +172,7 @@ export function PaymentDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setAmount(pendingAmount.toFixed(2))}
+                onClick={() => setAmount(roundedPending.toFixed(2))}
               >
                 Pagar todo
               </Button>
@@ -176,7 +180,7 @@ export function PaymentDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setAmount((pendingAmount / 2).toFixed(2))}
+                onClick={() => setAmount((roundedPending / 2).toFixed(2))}
               >
                 50%
               </Button>

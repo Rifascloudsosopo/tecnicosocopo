@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Customers from "./pages/Customers";
 import ServiceOrders from "./pages/ServiceOrders";
 import NewServiceOrder from "./pages/NewServiceOrder";
+import EditServiceOrder from "./pages/EditServiceOrder";
 import Inventory from "./pages/Inventory";
 import Technicians from "./pages/Technicians";
 import WhatsAppTemplates from "./pages/WhatsAppTemplates";
@@ -41,6 +42,7 @@ const App = () => (
             <Route path="/clientes" element={<ProtectedRoute requiredPermission="view_customers"><Customers /></ProtectedRoute>} />
             <Route path="/ordenes" element={<ProtectedRoute><ServiceOrders /></ProtectedRoute>} />
             <Route path="/ordenes/nueva" element={<ProtectedRoute requiredPermission="create_orders"><NewServiceOrder /></ProtectedRoute>} />
+            <Route path="/ordenes/editar/:id" element={<ProtectedRoute requiredPermission="edit_orders"><EditServiceOrder /></ProtectedRoute>} />
             <Route path="/tecnicos" element={<ProtectedRoute requiredPermission="manage_technicians"><Technicians /></ProtectedRoute>} />
             <Route path="/inventario" element={<ProtectedRoute requiredPermission="view_inventory"><Inventory /></ProtectedRoute>} />
             <Route path="/whatsapp" element={<ProtectedRoute requiredPermission="manage_whatsapp"><WhatsAppTemplates /></ProtectedRoute>} />

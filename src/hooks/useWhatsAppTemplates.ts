@@ -151,6 +151,14 @@ export function buildWhatsAppMessage(
   return message;
 }
 
+export function formatPhoneForWhatsApp(phone: string): string {
+  let clean = phone.replace(/[^0-9+]/g, '');
+  if (clean.startsWith('+')) clean = clean.slice(1);
+  if (clean.startsWith('0')) clean = '58' + clean.slice(1);
+  if (clean.length <= 10) clean = '58' + clean;
+  return clean;
+}
+
 export function openWhatsAppWithTemplate(
   phone: string,
   template: WhatsAppTemplate,
@@ -159,7 +167,7 @@ export function openWhatsAppWithTemplate(
   additionalVars?: Record<string, string>
 ) {
   const message = buildWhatsAppMessage(template, order, companyName, additionalVars);
-  const cleanPhone = phone.replace(/[^0-9]/g, '');
+  const cleanPhone = formatPhoneForWhatsApp(phone);
   const encodedMessage = encodeURIComponent(message);
   window.open(`https://wa.me/${cleanPhone}?text=${encodedMessage}`, '_blank');
 }
