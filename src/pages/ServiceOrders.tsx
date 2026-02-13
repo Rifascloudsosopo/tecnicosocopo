@@ -784,15 +784,6 @@ export default function ServiceOrders() {
                               >
                                 <DollarSign className="w-3.5 h-3.5" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                title="Repuestos y Costos"
-                                onClick={() => setCostsDialogOrderId(order.id)}
-                              >
-                                <DollarSign className="w-3.5 h-3.5" />
-                              </Button>
                               {(() => {
                                 const partsTotal = order.spare_parts_usage?.reduce((sum, u) => sum + u.quantity * u.unit_price, 0) || 0;
                                 const costsTotal = order.order_additional_costs?.reduce((sum, c) => sum + c.amount, 0) || 0;
