@@ -161,10 +161,22 @@ export default function ServiceOrders() {
           query = query.eq('status', statusFilter);
         }
 
-        // Apply search filter at database level
+        // Apply search filter at database level (including customer name and phone)
         if (searchQuery.trim()) {
           const search = searchQuery.trim().toLowerCase();
-          query = query.or(`order_number.ilike.%${search}%,device_brand.ilike.%${search}%,device_model.ilike.%${search}%`);
+          
+          // First, find customer IDs matching the search
+          const { data: matchingCustomers } = await (supabase.from('customers') as any)
+            .select('id')
+            .or(`name.ilike.%${search}%,phone.ilike.%${search}%,cedula.ilike.%${search}%`);
+          
+          const customerIds = (matchingCustomers || []).map((c: any) => c.id);
+          
+          if (customerIds.length > 0) {
+            query = query.or(`order_number.ilike.%${search}%,device_brand.ilike.%${search}%,device_model.ilike.%${search}%,customer_id.in.(${customerIds.join(',')})`);
+          } else {
+            query = query.or(`order_number.ilike.%${search}%,device_brand.ilike.%${search}%,device_model.ilike.%${search}%`);
+          }
         }
 
         // Apply pagination
@@ -196,7 +208,9 @@ export default function ServiceOrders() {
           cachedOrders = cachedOrders.filter(o => 
             o.order_number?.toLowerCase().includes(search) ||
             o.device_brand?.toLowerCase().includes(search) ||
-            o.device_model?.toLowerCase().includes(search)
+            o.device_model?.toLowerCase().includes(search) ||
+            o.customers?.name?.toLowerCase().includes(search) ||
+            o.customers?.phone?.toLowerCase().includes(search)
           );
         }
 
@@ -858,13 +872,28 @@ export default function ServiceOrders() {
 
             {orders.length === 0 && !loading && (
               <div className="text-center py-12">
-                <p className="text-muted-foreground">No se encontraron órdenes</p>
-                <Link to="/ordenes/nueva">
-                  <Button className="mt-4 gap-2">
-                    <Plus className="w-4 h-4" />
-                    Crear primera orden
-                  </Button>
-                </Link>
+                {searchQuery.trim() || statusFilter !== 'all' ? (
+                  <>
+                    <p className="text-muted-foreground">No se encontraron órdenes con esos filtros</p>
+                    <Button 
+                      variant="outline" 
+                      className="mt-4 gap-2"
+                      onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
+                    >
+                      Limpiar filtros
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-muted-foreground">No hay órdenes registradas</p>
+                    <Link to="/ordenes/nueva">
+                      <Button className="mt-4 gap-2">
+                        <Plus className="w-4 h-4" />
+                        Crear primera orden
+                      </Button>
+                    </Link>
+                  </>
+                )}
               </div>
             )}
           </>
